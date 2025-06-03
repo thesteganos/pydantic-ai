@@ -294,12 +294,10 @@ class ModelRequestParameters:
 
     function_tools: list[ToolDefinition] = field(default_factory=list)
 
-    output_mode: OutputMode | None = None
+    output_mode: OutputMode = 'text'
     output_object: OutputObjectDefinition | None = None
     output_tools: list[ToolDefinition] = field(default_factory=list)
-    require_tool_use: bool = (
-        True  # TODO: Rename back to allow_text_output because this is public API. Support bool as well as plain/json
-    )
+    allow_text_output: bool = True
 
 
 class Model(ABC):
@@ -429,18 +427,6 @@ class Model(ABC):
             return second_most_recent_request.instructions
 
         return None
-
-    @property
-    def supported_output_modes(self) -> set[OutputMode]:
-        """The supported output modes for the model."""
-        # TODO: Move to ModelProfile
-        return {'tool'}  # TODO: Support manual_json on all
-
-    @property
-    def default_output_mode(self) -> OutputMode:
-        """The default output mode for the model."""
-        # TODO: Move to ModelProfile
-        return 'tool'
 
 
 @dataclass

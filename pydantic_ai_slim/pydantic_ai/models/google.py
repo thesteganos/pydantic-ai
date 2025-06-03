@@ -213,7 +213,7 @@ class GoogleModel(Model):
     def _get_tool_config(
         self, model_request_parameters: ModelRequestParameters, tools: list[ToolDict] | None
     ) -> ToolConfigDict | None:
-        if not model_request_parameters.require_tool_use:
+        if model_request_parameters.output_mode != 'tool':
             return None
         elif tools:
             names: list[str] = []

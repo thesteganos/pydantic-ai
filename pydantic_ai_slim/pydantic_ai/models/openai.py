@@ -14,7 +14,7 @@ from pydantic_ai.profiles.openai import OpenAIModelProfile
 from pydantic_ai.providers import Provider, infer_provider
 
 from .. import ModelHTTPError, UnexpectedModelBehavior, _utils, usage
-from .._output import OutputMode, OutputObjectDefinition
+from .._output import OutputObjectDefinition
 from .._utils import guard_tool_call_id as _guard_tool_call_id
 from ..messages import (
     AudioUrl,
@@ -238,11 +238,6 @@ class OpenAIModel(Model):
         """The system / model provider."""
         return self._system
 
-    @property
-    def supported_output_modes(self) -> set[OutputMode]:
-        """The supported output modes for the model."""
-        return {'tool', 'json_schema', 'manual_json'}
-
     @overload
     async def _completions_create(
         self,
@@ -273,22 +268,17 @@ class OpenAIModel(Model):
         tools = [self._map_tool_definition(r) for r in model_request_parameters.function_tools]
         response_format: chat.completion_create_params.ResponseFormat | None = None
 
-        if model_request_parameters.output_mode == 'tool':
+        output_mode = model_request_parameters.output_mode
+        if output_mode == 'tool':
             tools.extend(self._map_tool_definition(r) for r in model_request_parameters.output_tools)
-        elif output_object := model_request_parameters.output_object:
-            if model_request_parameters.output_mode == 'json_schema':
-                response_format = self._map_output_object_definition(output_object)
-            elif model_request_parameters.output_mode == 'manual_json':
-                openai_messages.insert(
-                    0,
-                    chat.ChatCompletionSystemMessageParam(
-                        content=output_object.manual_json_instructions, role='system'
-                    ),
-                )
+        elif output_mode == 'json_schema':
+            output_object = model_request_parameters.output_object
+            assert output_object is not None
+            response_format = self._map_output_object_definition(output_object)
 
         if not tools:
             tool_choice: Literal['none', 'required', 'auto'] | None = None
-        elif model_request_parameters.require_tool_use:
+        elif model_request_parameters.output_mode == 'tool':
             tool_choice = 'required'
         else:
             tool_choice = 'auto'
@@ -599,11 +589,6 @@ class OpenAIResponsesModel(Model):
         """The system / model provider."""
         return self._system
 
-    @property
-    def supported_output_modes(self) -> set[OutputMode]:
-        """The supported output modes for the model."""
-        return {'tool', 'json_schema'}
-
     async def request(
         self,
         messages: list[ModelRequest | ModelResponse],
@@ -687,7 +672,7 @@ class OpenAIResponsesModel(Model):
         # standalone function to make it easier to override
         if not tools:
             tool_choice: Literal['none', 'required', 'auto'] | None = None
-        elif model_request_parameters.require_tool_use:
+        elif model_request_parameters.output_mode == 'tool':
             tool_choice = 'required'
         else:
             tool_choice = 'auto'
@@ -896,7 +881,6 @@ class OpenAIStreamedResponse(StreamedResponse):
             # Handle the text part of the response
             content = choice.delta.content
             if content is not None:
-                # TODO: Handle structured output
                 yield self._parts_manager.handle_text_delta(vendor_part_id='content', content=content)
 
             for dtc in choice.delta.tool_calls or []:
@@ -978,7 +962,6 @@ class OpenAIResponsesStreamedResponse(StreamedResponse):
                 pass
 
             elif isinstance(chunk, responses.ResponseTextDeltaEvent):
-                # TODO: Handle structured output
                 yield self._parts_manager.handle_text_delta(vendor_part_id=chunk.content_index, content=chunk.delta)
 
             elif isinstance(chunk, responses.ResponseTextDoneEvent):

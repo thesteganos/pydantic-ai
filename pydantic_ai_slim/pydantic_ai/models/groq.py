@@ -209,7 +209,7 @@ class GroqModel(Model):
         # standalone function to make it easier to override
         if not tools:
             tool_choice: Literal['none', 'required', 'auto'] | None = None
-        elif model_request_parameters.require_tool_use:
+        elif model_request_parameters.output_mode == 'tool':
             tool_choice = 'required'
         else:
             tool_choice = 'auto'

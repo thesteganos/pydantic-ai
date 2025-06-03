@@ -354,14 +354,14 @@ def test_response_tuple():
     m = TestModel()
 
     agent = Agent(m, output_type=tuple[str, str])
-    assert agent._output_schema.allow_text_output is None  # pyright: ignore[reportPrivateUsage,reportOptionalMemberAccess]
+    assert agent._output_schema.allow_text_output is False  # pyright: ignore[reportPrivateUsage]
 
     result = agent.run_sync('Hello')
     assert result.output == snapshot(('a', 'a'))
 
     assert m.last_model_request_parameters is not None
     assert m.last_model_request_parameters.function_tools == snapshot([])
-    assert m.last_model_request_parameters.require_tool_use is True
+    assert m.last_model_request_parameters.allow_text_output is False
 
     assert m.last_model_request_parameters.output_tools is not None
     assert len(m.last_model_request_parameters.output_tools) == 1
@@ -411,7 +411,7 @@ def test_response_union_allow_str(input_union_callable: Callable[[], Any]):
         got_tool_call_name = ctx.tool_name
         return o
 
-    assert agent._output_schema.allow_text_output == 'plain'  # pyright: ignore[reportPrivateUsage,reportOptionalMemberAccess]
+    assert agent._output_schema.allow_text_output == 'plain'  # pyright: ignore[reportPrivateUsage]
 
     result = agent.run_sync('Hello')
     assert result.output == snapshot('success (no tool calls)')
@@ -419,7 +419,7 @@ def test_response_union_allow_str(input_union_callable: Callable[[], Any]):
 
     assert m.last_model_request_parameters is not None
     assert m.last_model_request_parameters.function_tools == snapshot([])
-    assert m.last_model_request_parameters.require_tool_use is False
+    assert m.last_model_request_parameters.allow_text_output is True
 
     assert m.last_model_request_parameters.output_tools is not None
     assert len(m.last_model_request_parameters.output_tools) == 1
@@ -497,7 +497,7 @@ class Bar(BaseModel):
 
     assert m.last_model_request_parameters is not None
     assert m.last_model_request_parameters.function_tools == snapshot([])
-    assert m.last_model_request_parameters.require_tool_use is True
+    assert m.last_model_request_parameters.allow_text_output is False
 
     assert m.last_model_request_parameters.output_tools is not None
     assert len(m.last_model_request_parameters.output_tools) == 2

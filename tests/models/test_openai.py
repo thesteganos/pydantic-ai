@@ -2006,7 +2006,16 @@ async def test_openai_manual_json_output(allow_model_requests: None, openai_api_
                         content='What is the largest city in the user country?',
                         timestamp=IsDatetime(),
                     )
-                ]
+                ],
+                instructions="""\
+Always respond with a JSON object matching this description and schema:
+
+CityLocation
+
+{"properties": {"city": {"type": "string"}, "country": {"type": "string"}}, "required": ["city", "country"], "title": "CityLocation", "type": "object"}
+
+Don't include any text or Markdown fencing before or after.\
+""",
             ),
             ModelResponse(
                 parts=[
@@ -2037,7 +2046,16 @@ async def test_openai_manual_json_output(allow_model_requests: None, openai_api_
                         tool_call_id='call_uTjt2vMkeTr0GYqQyQYrUUhl',
                         timestamp=IsDatetime(),
                     )
-                ]
+                ],
+                instructions="""\
+Always respond with a JSON object matching this description and schema:
+
+CityLocation
+
+{"properties": {"city": {"type": "string"}, "country": {"type": "string"}}, "required": ["city", "country"], "title": "CityLocation", "type": "object"}
+
+Don't include any text or Markdown fencing before or after.\
+""",
             ),
             ModelResponse(
                 parts=[TextPart(content='{"city":"Mexico City","country":"Mexico"}')],

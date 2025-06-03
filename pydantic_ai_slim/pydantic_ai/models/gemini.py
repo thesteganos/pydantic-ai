@@ -192,7 +192,7 @@ class GeminiModel(Model):
     def _get_tool_config(
         self, model_request_parameters: ModelRequestParameters, tools: _GeminiTools | None
     ) -> _GeminiToolConfig | None:
-        if not model_request_parameters.require_tool_use:
+        if model_request_parameters.output_mode != 'tool':
             return None
         elif tools:
             return _tool_config([t['name'] for t in tools['function_declarations']])

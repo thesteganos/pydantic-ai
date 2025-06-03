@@ -13,6 +13,8 @@ from typing_extensions import TypeAliasType, TypedDict, TypeVar, get_args, get_o
 from typing_inspection import typing_objects
 from typing_inspection.introspection import is_union_origin
 
+from pydantic_ai.profiles import ModelProfile
+
 from . import _function_schema, _utils, messages as _messages
 from .exceptions import ModelRetry
 from .tools import AgentDepsT, GenerateToolJsonSchema, ObjectJsonSchema, RunContext, ToolDefinition
@@ -208,7 +210,7 @@ OutputType = TypeAliasType(
 )
 
 # TODO: Add `json_object` for old OpenAI models, or rename `json_schema` to `json` and choose automatically, relying on Pydantic validation
-type OutputMode = Literal['tool', 'json_schema', 'manual_json']
+type OutputMode = Literal['text', 'tool', 'tool_or_text', 'json_schema', 'manual_json']
 
 
 @dataclass
@@ -218,50 +220,46 @@ class OutputSchema(Generic[OutputDataT]):
     Similar to `Tool` but for the final output of running an agent.
     """
 
-    forced_mode: OutputMode | None
-    object_schema: OutputObjectSchema[OutputDataT] | OutputUnionSchema[OutputDataT]
-    tools: dict[str, OutputTool[OutputDataT]]
-    allow_text_output: Literal['plain', 'json'] | None = None
+    mode: OutputMode | None
+    object_schema: OutputObjectSchema[OutputDataT] | OutputUnionSchema[OutputDataT] | None = None
+    tools: dict[str, OutputTool[OutputDataT]] = field(default_factory=dict)
 
     @classmethod
     def build(
         cls: type[OutputSchema[OutputDataT]],
         output_type: OutputType[OutputDataT],
-        name: str | None = None,
-        description: str | None = None,
-        strict: bool | None = None,
-    ) -> OutputSchema[OutputDataT] | None:
+        name: str | None,
+        description: str | None,
+    ) -> OutputSchema[OutputDataT]:
         """Build an OutputSchema dataclass from an output type."""
         if output_type is str:
-            return None
+            return cls(mode='text')
 
-        forced_mode: OutputMode | None = None
-        allow_text_output: Literal['plain', 'json'] | None = 'plain'
+        mode: OutputMode | None = None
         tools: dict[str, OutputTool[OutputDataT]] = {}
+        strict: bool | None = None
 
         output_types: Sequence[OutputTypeOrFunction[OutputDataT]]
         if isinstance(output_type, JSONSchemaOutput):
-            forced_mode = 'json_schema'
+            mode = 'json_schema'
             output_types = output_type.output_types
             name = output_type.name  # TODO: If not set, use method arg?
             description = output_type.description
             strict = output_type.strict
-            allow_text_output = 'json'
         elif isinstance(output_type, ManualJSONOutput):
-            forced_mode = 'manual_json'
+            mode = 'manual_json'
             output_types = output_type.output_types
             name = output_type.name
             description = output_type.description
-            allow_text_output = 'json'
         else:
-            # TODO: We can't always force tool mode here, because some models may not support tools but will work with manual_json
             output_types_or_tool_outputs = flatten_output_types(output_type)
 
             if str in output_types_or_tool_outputs:
-                forced_mode = 'tool'
-                allow_text_output = 'plain'
-                # TODO: What if str is the only item, e.g. `output_type=[str]`
-                output_types_or_tool_outputs = [t for t in output_types_or_tool_outputs if t is not str]
+                if len(output_types_or_tool_outputs) == 1:
+                    return cls(mode='text')
+                else:
+                    mode = 'tool_or_text'
+                    output_types_or_tool_outputs = [t for t in output_types_or_tool_outputs if t is not str]
 
             multiple = len(output_types_or_tool_outputs) > 1
 
@@ -275,7 +273,9 @@ class OutputSchema(Generic[OutputDataT]):
                 tool_description = None
                 tool_strict = None
                 if isinstance(output_type_or_tool_output, ToolOutput):
-                    forced_mode = 'tool'
+                    if mode is None:
+                        mode = 'tool'
+
                     tool_output = output_type_or_tool_output
                     output_type = tool_output.output_type
                     # do we need to error on conflicts here? (DavidM): If this is internal maybe doesn't matter, if public, use overloads
@@ -307,7 +307,6 @@ class OutputSchema(Generic[OutputDataT]):
                 output_types.append(output_type)
 
         output_types = flatten_output_types(output_types)
-
         if len(output_types) > 1:
             output_object_schema = OutputUnionSchema(
                 output_types=output_types, name=name, description=description, strict=strict
@@ -318,11 +317,29 @@ class OutputSchema(Generic[OutputDataT]):
             )
 
         return cls(
-            forced_mode=forced_mode,
+            mode=mode,
             object_schema=output_object_schema,
             tools=tools,
-            allow_text_output=allow_text_output,
         )
+
+    @property
+    def allow_text_output(self) -> Literal['plain', 'json', False]:
+        """Whether the model allows text output."""
+        if self.mode in ('text', 'tool_or_text'):
+            return 'plain'
+        elif self.mode in ('json_schema', 'manual_json'):
+            return 'json'
+        else:  # tool-only mode
+            return False
+
+    def is_mode_supported(self, profile: ModelProfile) -> bool:
+        """Whether the model supports the output mode."""
+        mode = self.mode
+        if mode in ('text', 'manual_json'):
+            return True
+        if self.mode == 'tool_or_text':
+            mode = 'tool'
+        return mode in profile.output_modes
 
     def find_named_tool(
         self, parts: Iterable[_messages.ModelResponsePart], tool_name: str
@@ -369,14 +386,16 @@ class OutputSchema(Generic[OutputDataT]):
         Returns:
             Either the validated output data (left) or a retry message (right).
         """
+        assert self.allow_text_output is not False
+
+        if self.allow_text_output == 'plain':
+            return cast(OutputDataT, data)
+
+        assert self.object_schema is not None
+
         return await self.object_schema.process(
             data, run_context, allow_partial=allow_partial, wrap_validation_errors=wrap_validation_errors
         )
-
-
-def allow_text_output(output_schema: OutputSchema[Any] | None) -> bool:
-    # TODO: Add plain/json argument?
-    return output_schema is None or output_schema.allow_text_output is not None
 
 
 @dataclass
@@ -389,6 +408,7 @@ class OutputObjectDefinition:
     @property
     def manual_json_instructions(self) -> str:
         """Get instructions for model to output manual JSON matching the schema."""
+        # TODO: Move to ModelProfile so it can be tweaked
         description = ': '.join([v for v in [self.name, self.description] if v])
         return DEFAULT_MANUAL_JSON_PROMPT.format(schema=json.dumps(self.json_schema), description=description)
 

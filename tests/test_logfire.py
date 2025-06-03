@@ -223,10 +223,10 @@ def test_logfire(get_logfire_summary: Callable[[], LogfireSummary], instrument: 
                                 'strict': None,
                             }
                         ],
-                        'output_mode': None,
+                        'output_mode': 'text',
                         'output_tools': [],
                         'output_object': None,
-                        'require_tool_use': False,
+                        'allow_text_output': True,
                     }
                 )
             ),
@@ -406,7 +406,7 @@ async def test_feedback(capfire: CaptureLogfire) -> None:
                     'gen_ai.operation.name': 'chat',
                     'gen_ai.system': 'test',
                     'gen_ai.request.model': 'test',
-                    'model_request_parameters': '{"function_tools": [], "output_mode": null, "output_object": null, "output_tools": [], "require_tool_use": false}',
+                    'model_request_parameters': '{"function_tools": [], "output_mode": "text", "output_object": null, "output_tools": [], "allow_text_output": true}',
                     'logfire.span_type': 'span',
                     'logfire.msg': 'chat test',
                     'gen_ai.usage.input_tokens': 51,

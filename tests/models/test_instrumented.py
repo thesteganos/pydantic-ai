@@ -132,9 +132,9 @@ async def test_instrumented_model(capfire: CaptureLogfire):
         model_settings=ModelSettings(temperature=1),
         model_request_parameters=ModelRequestParameters(
             function_tools=[],
-            require_tool_use=False,
+            allow_text_output=True,
             output_tools=[],
-            output_mode=None,
+            output_mode='text',
             output_object=None,
         ),
     )
@@ -153,7 +153,7 @@ async def test_instrumented_model(capfire: CaptureLogfire):
                     'gen_ai.request.model': 'my_model',
                     'server.address': 'example.com',
                     'server.port': 8000,
-                    'model_request_parameters': '{"function_tools": [], "output_mode": null, "output_object": null, "output_tools": [], "require_tool_use": false}',
+                    'model_request_parameters': '{"function_tools": [], "output_mode": null, "output_object": null, "output_tools": [], "allow_text_output": true}',
                     'logfire.json_schema': '{"type": "object", "properties": {"model_request_parameters": {"type": "object"}}}',
                     'gen_ai.request.temperature': 1,
                     'logfire.msg': 'chat my_model',
@@ -330,9 +330,9 @@ async def test_instrumented_model_not_recording():
         model_settings=ModelSettings(temperature=1),
         model_request_parameters=ModelRequestParameters(
             function_tools=[],
-            require_tool_use=False,
+            allow_text_output=True,
             output_tools=[],
-            output_mode=None,
+            output_mode='text',
             output_object=None,
         ),
     )
@@ -354,9 +354,9 @@ async def test_instrumented_model_stream(capfire: CaptureLogfire):
         model_settings=ModelSettings(temperature=1),
         model_request_parameters=ModelRequestParameters(
             function_tools=[],
-            require_tool_use=False,
+            allow_text_output=True,
             output_tools=[],
-            output_mode=None,
+            output_mode='text',
             output_object=None,
         ),
     ) as response_stream:
@@ -381,7 +381,7 @@ async def test_instrumented_model_stream(capfire: CaptureLogfire):
                     'gen_ai.request.model': 'my_model',
                     'server.address': 'example.com',
                     'server.port': 8000,
-                    'model_request_parameters': '{"function_tools": [], "output_mode": null, "output_object": null, "output_tools": [], "require_tool_use": false}',
+                    'model_request_parameters': '{"function_tools": [], "output_mode": null, "output_object": null, "output_tools": [], "allow_text_output": true}',
                     'logfire.json_schema': '{"type": "object", "properties": {"model_request_parameters": {"type": "object"}}}',
                     'gen_ai.request.temperature': 1,
                     'logfire.msg': 'chat my_model',
@@ -444,9 +444,9 @@ async def test_instrumented_model_stream_break(capfire: CaptureLogfire):
             model_settings=ModelSettings(temperature=1),
             model_request_parameters=ModelRequestParameters(
                 function_tools=[],
-                require_tool_use=False,
+                allow_text_output=True,
                 output_tools=[],
-                output_mode=None,
+                output_mode='text',
                 output_object=None,
             ),
         ) as response_stream:
@@ -468,7 +468,7 @@ async def test_instrumented_model_stream_break(capfire: CaptureLogfire):
                     'gen_ai.request.model': 'my_model',
                     'server.address': 'example.com',
                     'server.port': 8000,
-                    'model_request_parameters': '{"function_tools": [], "output_mode": null, "output_object": null, "output_tools": [], "require_tool_use": false}',
+                    'model_request_parameters': '{"function_tools": [], "output_mode": null, "output_object": null, "output_tools": [], "allow_text_output": true}',
                     'logfire.json_schema': '{"type": "object", "properties": {"model_request_parameters": {"type": "object"}}}',
                     'gen_ai.request.temperature': 1,
                     'logfire.msg': 'chat my_model',
@@ -549,9 +549,9 @@ async def test_instrumented_model_attributes_mode(capfire: CaptureLogfire):
         model_settings=ModelSettings(temperature=1),
         model_request_parameters=ModelRequestParameters(
             function_tools=[],
-            require_tool_use=False,
+            allow_text_output=True,
             output_tools=[],
-            output_mode=None,
+            output_mode='text',
             output_object=None,
         ),
     )
@@ -570,7 +570,7 @@ async def test_instrumented_model_attributes_mode(capfire: CaptureLogfire):
                     'gen_ai.request.model': 'my_model',
                     'server.address': 'example.com',
                     'server.port': 8000,
-                    'model_request_parameters': '{"function_tools": [], "output_mode": null, "output_object": null, "output_tools": [], "require_tool_use": false}',
+                    'model_request_parameters': '{"function_tools": [], "output_mode": null, "output_object": null, "output_tools": [], "allow_text_output": true}',
                     'gen_ai.request.temperature': 1,
                     'logfire.msg': 'chat my_model',
                     'logfire.span_type': 'span',
