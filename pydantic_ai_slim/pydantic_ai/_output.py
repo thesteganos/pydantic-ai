@@ -693,9 +693,7 @@ def get_union_args(tp: Any) -> tuple[Any, ...]:
         return ()
 
 
-def flatten_output_types[T](
-    output_type: T | Sequence[T],
-) -> list[T]:
+def flatten_output_types(output_type: T | Sequence[T]) -> list[T]:
     output_types: Sequence[T]
     if isinstance(output_type, Sequence):
         output_types = output_type
