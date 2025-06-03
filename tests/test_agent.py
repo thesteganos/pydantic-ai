@@ -2487,6 +2487,7 @@ def test_instructions_parameter_with_sequence():
             parts=[UserPromptPart(content='Hello', timestamp=IsDatetime())],
             instructions="""\
 You are a helpful assistant.
+
 You are a potato.\
 """,
         )

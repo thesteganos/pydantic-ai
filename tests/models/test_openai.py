@@ -2100,3 +2100,113 @@ Don't include any text or Markdown fencing before or after.\
             ),
         ]
     )
+
+
+@pytest.mark.vcr()
+async def test_openai_manual_json_output_multiple(allow_model_requests: None, openai_api_key: str):
+    m = OpenAIModel('gpt-4o', provider=OpenAIProvider(api_key=openai_api_key))
+
+    class CityLocation(BaseModel):
+        city: str
+        country: str
+
+    class CountryLanguage(BaseModel):
+        country: str
+        language: str
+
+    # TODO: Test with functions!
+    agent = Agent(m, output_type=ManualJSONOutput([CityLocation, CountryLanguage]))
+
+    @agent.tool_plain
+    async def get_user_country() -> str:
+        return 'Mexico'
+
+    # TODO: Show what response_format looks like
+
+    result = await agent.run('What is the largest city in the user country?')
+    assert result.output == snapshot(CityLocation(city='Mexico City', country='Mexico'))
+
+    assert result.all_messages() == snapshot(
+        [
+            ModelRequest(
+                parts=[
+                    UserPromptPart(
+                        content='What is the largest city in the user country?',
+                        timestamp=IsDatetime(),
+                    )
+                ],
+                instructions="""\
+Always respond with a JSON object matching this description and schema:
+
+final_result: The final response which ends this conversation
+
+{"type": "object", "properties": {"result": {"anyOf": [{"type": "object", "properties": {"kind": {"const": "CityLocation"}, "data": {"properties": {"city": {"type": "string"}, "country": {"type": "string"}}, "required": ["city", "country"], "title": "CityLocation", "type": "object"}}, "description": "CityLocation", "required": ["kind", "data"], "additionalProperties": false}, {"type": "object", "properties": {"kind": {"const": "CountryLanguage"}, "data": {"properties": {"country": {"type": "string"}, "language": {"type": "string"}}, "required": ["country", "language"], "title": "CountryLanguage", "type": "object"}}, "description": "CountryLanguage", "required": ["kind", "data"], "additionalProperties": false}]}}, "required": ["result"], "additionalProperties": false}
+
+Don't include any text or Markdown fencing before or after.\
+""",
+            ),
+            ModelResponse(
+                parts=[
+                    ToolCallPart(tool_name='get_user_country', args='{}', tool_call_id='call_W3kwVF2ZX9cZ2L9NnbSDSs3V')
+                ],
+                usage=Usage(
+                    requests=1,
+                    request_tokens=284,
+                    response_tokens=11,
+                    total_tokens=295,
+                    details={
+                        'accepted_prediction_tokens': 0,
+                        'audio_tokens': 0,
+                        'reasoning_tokens': 0,
+                        'rejected_prediction_tokens': 0,
+                        'cached_tokens': 0,
+                    },
+                ),
+                model_name='gpt-4o-2024-08-06',
+                timestamp=IsDatetime(),
+                vendor_id='chatcmpl-BeESepFYXE1ELAEvKlRNvsRzzYkOg',
+            ),
+            ModelRequest(
+                parts=[
+                    ToolReturnPart(
+                        tool_name='get_user_country',
+                        content='Mexico',
+                        tool_call_id='call_W3kwVF2ZX9cZ2L9NnbSDSs3V',
+                        timestamp=IsDatetime(),
+                    )
+                ],
+                instructions="""\
+Always respond with a JSON object matching this description and schema:
+
+final_result: The final response which ends this conversation
+
+{"type": "object", "properties": {"result": {"anyOf": [{"type": "object", "properties": {"kind": {"const": "CityLocation"}, "data": {"properties": {"city": {"type": "string"}, "country": {"type": "string"}}, "required": ["city", "country"], "title": "CityLocation", "type": "object"}}, "description": "CityLocation", "required": ["kind", "data"], "additionalProperties": false}, {"type": "object", "properties": {"kind": {"const": "CountryLanguage"}, "data": {"properties": {"country": {"type": "string"}, "language": {"type": "string"}}, "required": ["country", "language"], "title": "CountryLanguage", "type": "object"}}, "description": "CountryLanguage", "required": ["kind", "data"], "additionalProperties": false}]}}, "required": ["result"], "additionalProperties": false}
+
+Don't include any text or Markdown fencing before or after.\
+""",
+            ),
+            ModelResponse(
+                parts=[
+                    TextPart(
+                        content='{"result":{"kind":"CityLocation","data":{"city":"Mexico City","country":"Mexico"}}}'
+                    )
+                ],
+                usage=Usage(
+                    requests=1,
+                    request_tokens=305,
+                    response_tokens=21,
+                    total_tokens=326,
+                    details={
+                        'accepted_prediction_tokens': 0,
+                        'audio_tokens': 0,
+                        'reasoning_tokens': 0,
+                        'rejected_prediction_tokens': 0,
+                        'cached_tokens': 0,
+                    },
+                ),
+                model_name='gpt-4o-2024-08-06',
+                timestamp=IsDatetime(),
+                vendor_id='chatcmpl-BeESfsdYDCQwP7kGM4r5i8KXwllkT',
+            ),
+        ]
+    )

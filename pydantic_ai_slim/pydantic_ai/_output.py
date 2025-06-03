@@ -210,7 +210,7 @@ OutputType = TypeAliasType(
 )
 
 # TODO: Add `json_object` for old OpenAI models, or rename `json_schema` to `json` and choose automatically, relying on Pydantic validation
-type OutputMode = Literal['text', 'tool', 'tool_or_text', 'json_schema', 'manual_json']
+OutputMode = Literal['text', 'tool', 'tool_or_text', 'json_schema', 'manual_json']
 
 
 @dataclass
@@ -370,7 +370,7 @@ class OutputSchema(Generic[OutputDataT]):
 
     async def process(
         self,
-        data: str | dict[str, Any],
+        text: str,
         run_context: RunContext[AgentDepsT],
         allow_partial: bool = False,
         wrap_validation_errors: bool = True,
@@ -378,7 +378,7 @@ class OutputSchema(Generic[OutputDataT]):
         """Validate an output message.
 
         Args:
-            data: The output data to validate.
+            text: The output text to validate.
             run_context: The current run context.
             allow_partial: If true, allow partial validation.
             wrap_validation_errors: If true, wrap the validation errors in a retry message.
@@ -389,12 +389,14 @@ class OutputSchema(Generic[OutputDataT]):
         assert self.allow_text_output is not False
 
         if self.allow_text_output == 'plain':
-            return cast(OutputDataT, data)
+            return cast(OutputDataT, text)
 
+        # TODO: Always give this some value so we can drop some checks/asserts
         assert self.object_schema is not None
 
+        # TODO: Strip Markdown fences?
         return await self.object_schema.process(
-            data, run_context, allow_partial=allow_partial, wrap_validation_errors=wrap_validation_errors
+            text, run_context, allow_partial=allow_partial, wrap_validation_errors=wrap_validation_errors
         )
 
 
