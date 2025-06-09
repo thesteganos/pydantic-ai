@@ -16,7 +16,7 @@ from typing_inspection.introspection import is_union_origin
 from pydantic_ai.profiles import ModelProfile
 
 from . import _function_schema, _utils, messages as _messages
-from .exceptions import ModelRetry
+from .exceptions import ModelRetry, UserError
 from .tools import AgentDepsT, GenerateToolJsonSchema, ObjectJsonSchema, RunContext, ToolDefinition
 
 T = TypeVar('T')
@@ -150,6 +150,16 @@ class ToolOutput(Generic[OutputDataT]):
         self.strict = strict
 
 
+@dataclass
+class TextOutput(Generic[OutputDataT]):
+    """Marker class to use text output for outputs."""
+
+    output_type: (
+        Callable[[RunContext, str], Awaitable[OutputDataT] | OutputDataT]
+        | Callable[[str], Awaitable[OutputDataT] | OutputDataT]
+    )
+
+
 @dataclass(init=False)
 class JSONSchemaOutput(Generic[OutputDataT]):
     """Marker class to use JSON schema output for outputs."""
@@ -195,14 +205,15 @@ class ManualJSONOutput(Generic[OutputDataT]):
 T_co = TypeVar('T_co', covariant=True)
 
 OutputTypeOrFunction = TypeAliasType(
-    'OutputTypeOrFunction', Union[type[T_co], Callable[..., T_co], Callable[..., Awaitable[T_co]]], type_params=(T_co,)
+    'OutputTypeOrFunction', Union[type[T_co], Callable[..., Awaitable[T_co] | T_co]], type_params=(T_co,)
 )
 OutputType = TypeAliasType(
     'OutputType',
     Union[
         OutputTypeOrFunction[T_co],
         ToolOutput[T_co],
-        Sequence[Union[OutputTypeOrFunction[T_co], ToolOutput[T_co]]],
+        TextOutput[T_co],
+        Sequence[Union[OutputTypeOrFunction[T_co], ToolOutput[T_co], TextOutput[T_co]]],
         JSONSchemaOutput[T_co],
         ManualJSONOutput[T_co],
     ],
@@ -213,124 +224,160 @@ OutputType = TypeAliasType(
 OutputMode = Literal['text', 'tool', 'tool_or_text', 'json_schema', 'manual_json']
 
 
-@dataclass
+@dataclass(init=False)
 class OutputSchema(Generic[OutputDataT]):
     """Model the final output from an agent run.
 
     Similar to `Tool` but for the final output of running an agent.
     """
 
-    mode: OutputMode | None
-    object_schema: OutputObjectSchema[OutputDataT] | OutputUnionSchema[OutputDataT] | None = None
+    mode: OutputMode | None = None
+    text_output_schema: (
+        OutputObjectSchema[OutputDataT] | OutputUnionSchema[OutputDataT] | OutputTextSchema[OutputDataT] | None
+    ) = None
     tools: dict[str, OutputTool[OutputDataT]] = field(default_factory=dict)
 
-    @classmethod
-    def build(
-        cls: type[OutputSchema[OutputDataT]],
+    def __init__(
+        self,
         output_type: OutputType[OutputDataT],
-        name: str | None,
-        description: str | None,
-    ) -> OutputSchema[OutputDataT]:
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        strict: bool | None = None,
+    ):
         """Build an OutputSchema dataclass from an output type."""
+        self.mode = None
+        self.text_output_schema = None
+        self.tools = {}
+
         if output_type is str:
-            return cls(mode='text')
+            self.mode = 'text'
+            self.text_output_schema = OutputTextSchema(output_type)
+            return
 
-        mode: OutputMode | None = None
-        tools: dict[str, OutputTool[OutputDataT]] = {}
-        strict: bool | None = None
-
-        output_types: Sequence[OutputTypeOrFunction[OutputDataT]]
         if isinstance(output_type, JSONSchemaOutput):
-            mode = 'json_schema'
-            output_types = output_type.output_types
-            name = output_type.name  # TODO: If not set, use method arg?
-            description = output_type.description
-            strict = output_type.strict
-        elif isinstance(output_type, ManualJSONOutput):
-            mode = 'manual_json'
-            output_types = output_type.output_types
-            name = output_type.name
-            description = output_type.description
-        else:
-            output_types_or_tool_outputs = flatten_output_types(output_type)
-
-            if str in output_types_or_tool_outputs:
-                if len(output_types_or_tool_outputs) == 1:
-                    return cls(mode='text')
-                else:
-                    mode = 'tool_or_text'
-                    output_types_or_tool_outputs = [t for t in output_types_or_tool_outputs if t is not str]
-
-            multiple = len(output_types_or_tool_outputs) > 1
-
-            default_tool_name = name or DEFAULT_OUTPUT_TOOL_NAME
-            default_tool_description = description
-            default_tool_strict = strict
-
-            output_types = []
-            for output_type_or_tool_output in output_types_or_tool_outputs:
-                tool_name = None
-                tool_description = None
-                tool_strict = None
-                if isinstance(output_type_or_tool_output, ToolOutput):
-                    if mode is None:
-                        mode = 'tool'
-
-                    tool_output = output_type_or_tool_output
-                    output_type = tool_output.output_type
-                    # do we need to error on conflicts here? (DavidM): If this is internal maybe doesn't matter, if public, use overloads
-                    tool_name = tool_output.name
-                    tool_description = tool_output.description
-                    tool_strict = tool_output.strict
-                else:
-                    output_type = output_type_or_tool_output
-
-                if tool_name is None:
-                    tool_name = default_tool_name
-                    if multiple:
-                        tool_name += f'_{output_type.__name__}'
-
-                i = 1
-                original_tool_name = tool_name
-                while tool_name in tools:
-                    i += 1
-                    tool_name = f'{original_tool_name}_{i}'
-
-                tool_description = tool_description or default_tool_description
-                if tool_strict is None:
-                    tool_strict = default_tool_strict
-
-                parameters_schema = OutputObjectSchema(
-                    output_type=output_type, description=tool_description, strict=tool_strict
-                )
-                tools[tool_name] = OutputTool(name=tool_name, parameters_schema=parameters_schema, multiple=multiple)
-                output_types.append(output_type)
-
-        output_types = flatten_output_types(output_types)
-        if len(output_types) > 1:
-            output_object_schema = OutputUnionSchema(
-                output_types=output_types, name=name, description=description, strict=strict
+            self.mode = 'json_schema'
+            self.text_output_schema = self._build_text_output_schema(
+                output_type.output_types,
+                name=output_type.name,
+                description=output_type.description,
+                strict=output_type.strict,
             )
+            return
+
+        if isinstance(output_type, ManualJSONOutput):
+            self.mode = 'manual_json'
+            self.text_output_schema = self._build_text_output_schema(
+                output_type.output_types, name=output_type.name, description=output_type.description
+            )
+            return
+
+        text_outputs: Sequence[type[str] | TextOutput[OutputDataT]] = []
+        tool_outputs: Sequence[ToolOutput[OutputDataT]] = []
+        other_outputs: Sequence[OutputTypeOrFunction[OutputDataT]] = []
+        for output_type_or_marker in flatten_output_types(output_type):
+            if output_type_or_marker is str:
+                text_outputs.append(cast(type[str], output_type_or_marker))
+            elif isinstance(output_type_or_marker, TextOutput):
+                text_outputs.append(output_type_or_marker)
+            elif isinstance(output_type_or_marker, ToolOutput):
+                tool_outputs.append(output_type_or_marker)
+            else:
+                other_outputs.append(output_type_or_marker)
+
+        self.tools = self._build_tools(tool_outputs + other_outputs, name=name, description=description, strict=strict)
+
+        if len(text_outputs) > 0:
+            if len(text_outputs) > 1:
+                raise UserError('Only one text output is allowed')
+            text_output = text_outputs[0]
+
+            self.mode = 'text'
+            if len(self.tools) > 0:
+                self.mode = 'tool_or_text'
+
+            if isinstance(text_output, TextOutput):
+                self.text_output_schema = OutputTextSchema(text_output.output_type)
+            elif text_output is str:
+                self.text_output_schema = cast(OutputTextSchema[OutputDataT], OutputTextSchema(text_output))
+        elif len(tool_outputs) > 0:
+            self.mode = 'tool'
         else:
-            output_object_schema = OutputObjectSchema(
-                output_type=output_types[0], name=name, description=description, strict=strict
+            self.text_output_schema = self._build_text_output_schema(
+                other_outputs, name=name, description=description, strict=strict
             )
 
-        return cls(
-            mode=mode,
-            object_schema=output_object_schema,
-            tools=tools,
-        )
+    @staticmethod
+    def _build_tools(
+        outputs: list[OutputTypeOrFunction[OutputDataT] | ToolOutput[OutputDataT]],
+        name: str | None = None,
+        description: str | None = None,
+        strict: bool | None = None,
+    ) -> dict[str, OutputTool[OutputDataT]]:
+        tools: dict[str, OutputTool[OutputDataT]] = {}
+
+        default_name = name or DEFAULT_OUTPUT_TOOL_NAME
+        default_description = description
+        default_strict = strict
+
+        multiple = len(outputs) > 1
+        for output in outputs:
+            name = None
+            description = None
+            strict = None
+            if isinstance(output, ToolOutput):
+                output_type = output.output_type
+                # do we need to error on conflicts here? (DavidM): If this is internal maybe doesn't matter, if public, use overloads
+                name = output.name
+                description = output.description
+                strict = output.strict
+            else:
+                output_type = output
+
+            if name is None:
+                name = default_name
+                if multiple:
+                    name += f'_{output_type.__name__}'
+
+            i = 1
+            original_name = name
+            while name in tools:
+                i += 1
+                name = f'{original_name}_{i}'
+
+            description = description or default_description
+            if strict is None:
+                strict = default_strict
+
+            parameters_schema = OutputObjectSchema(output_type=output_type, description=description, strict=strict)
+            tools[name] = OutputTool(name=name, parameters_schema=parameters_schema, multiple=multiple)
+
+        return tools
+
+    @staticmethod
+    def _build_text_output_schema(
+        outputs: Sequence[OutputTypeOrFunction[OutputDataT]],
+        name: str | None = None,
+        description: str | None = None,
+        strict: bool | None = None,
+    ) -> OutputObjectSchema[OutputDataT] | OutputUnionSchema[OutputDataT] | None:
+        if len(outputs) == 0:
+            return None
+
+        outputs = flatten_output_types(outputs)
+        if len(outputs) == 1:
+            return OutputObjectSchema(output_type=outputs[0], name=name, description=description, strict=strict)
+
+        return OutputUnionSchema(output_types=outputs, name=name, description=description, strict=strict)
 
     @property
     def allow_text_output(self) -> Literal['plain', 'json', False]:
         """Whether the model allows text output."""
+        if self.mode == 'tool':
+            return False
         if self.mode in ('text', 'tool_or_text'):
             return 'plain'
-        elif self.mode in ('json_schema', 'manual_json'):
-            return 'json'
-        else:  # tool-only mode
-            return False
+        return 'json'
 
     def is_mode_supported(self, profile: ModelProfile) -> bool:
         """Whether the model supports the output mode."""
@@ -387,15 +434,10 @@ class OutputSchema(Generic[OutputDataT]):
             Either the validated output data (left) or a retry message (right).
         """
         assert self.allow_text_output is not False
-
-        if self.allow_text_output == 'plain':
-            return cast(OutputDataT, text)
-
-        # TODO: Always give this some value so we can drop some checks/asserts
-        assert self.object_schema is not None
+        assert self.text_output_schema is not None
 
         # TODO: Strip Markdown fences?
-        return await self.object_schema.process(
+        return await self.text_output_schema.process(
             text, run_context, allow_partial=allow_partial, wrap_validation_errors=wrap_validation_errors
         )
 
@@ -429,8 +471,7 @@ class OutputUnionData:
 # TODO: Better class naming
 @dataclass(init=False)
 class OutputUnionSchema(Generic[OutputDataT]):
-    definition: OutputObjectDefinition
-    outer_typed_dict_key: str = 'result'
+    object_def: OutputObjectDefinition
     _root_object_schema: OutputObjectSchema[OutputUnionData]
     _object_schemas: dict[str, OutputObjectSchema[OutputDataT]]
 
@@ -461,9 +502,9 @@ class OutputUnionSchema(Generic[OutputDataT]):
                                 'kind': {
                                     'const': name,
                                 },
-                                'data': object_schema.definition.json_schema,  # TODO: Pop description here?
+                                'data': object_schema.object_def.json_schema,  # TODO: Pop description here?
                             },
-                            'description': object_schema.definition.description or name,  # TODO: Better description
+                            'description': object_schema.object_def.description or name,  # TODO: Better description
                             'required': ['kind', 'data'],
                             'additionalProperties': False,
                         }
@@ -475,7 +516,7 @@ class OutputUnionSchema(Generic[OutputDataT]):
             'additionalProperties': False,
         }
 
-        self.definition = OutputObjectDefinition(
+        self.object_def = OutputObjectDefinition(
             name=name or DEFAULT_OUTPUT_TOOL_NAME,
             description=description or DEFAULT_OUTPUT_TOOL_DESCRIPTION,
             json_schema=json_schema,
@@ -509,15 +550,15 @@ class OutputUnionSchema(Generic[OutputDataT]):
 
 @dataclass(init=False)
 class OutputObjectSchema(Generic[OutputDataT]):
-    definition: OutputObjectDefinition
+    object_def: OutputObjectDefinition
     outer_typed_dict_key: str | None = None
     _validator: SchemaValidator
     _function_schema: _function_schema.FunctionSchema | None = None
 
     def __init__(
         self,
-        *,
         output_type: OutputTypeOrFunction[OutputDataT],
+        *,
         name: str | None = None,
         description: str | None = None,
         strict: bool | None = None,
@@ -555,7 +596,7 @@ class OutputObjectSchema(Generic[OutputDataT]):
             else:
                 description = f'{description}. {json_schema_description}'
 
-        self.definition = OutputObjectDefinition(
+        self.object_def = OutputObjectDefinition(
             name=name or getattr(output_type, '__name__', DEFAULT_OUTPUT_TOOL_NAME),
             description=description,
             json_schema=json_schema,
@@ -595,6 +636,9 @@ class OutputObjectSchema(Generic[OutputDataT]):
             else:
                 raise
 
+        if k := self.outer_typed_dict_key:
+            output = output[k]
+
         if self._function_schema:
             try:
                 output = await self._function_schema.call(output, run_context)
@@ -607,9 +651,58 @@ class OutputObjectSchema(Generic[OutputDataT]):
                 else:
                     raise
 
-        if k := self.outer_typed_dict_key:
-            output = output[k]
         return output
+
+
+@dataclass(init=False)
+class OutputTextSchema(Generic[OutputDataT]):
+    _function_schema: _function_schema.FunctionSchema | None = None
+    _str_argument_name: str | None = None
+
+    def __init__(
+        self,
+        output_type: type[OutputDataT]
+        | Callable[[RunContext[AgentDepsT], str], Awaitable[OutputDataT] | OutputDataT]
+        | Callable[[str], Awaitable[OutputDataT] | OutputDataT] = str,
+    ):
+        if inspect.isfunction(output_type) or inspect.ismethod(output_type):
+            self._function_schema = _function_schema.function_schema(output_type, GenerateToolJsonSchema)
+            arguments_schema = self._function_schema.json_schema.get('properties', {})
+            argument_name = next(iter(arguments_schema.keys()), None)
+            if argument_name and arguments_schema.get(argument_name, {}).get('type') == 'string':
+                self._str_argument_name = argument_name
+                return
+        elif output_type is str:
+            return
+
+        raise ValueError('OutputTextSchema must take the `str` type or a function taking a `str`')
+
+    @property
+    def object_def(self) -> None:
+        return None
+
+    async def process(
+        self,
+        data: str,
+        run_context: RunContext[AgentDepsT],
+        allow_partial: bool = False,
+        wrap_validation_errors: bool = True,
+    ) -> OutputDataT:
+        output = data
+
+        if self._function_schema and self._str_argument_name:
+            try:
+                output = await self._function_schema.call({self._str_argument_name: output}, run_context)
+            except ModelRetry as r:
+                if wrap_validation_errors:
+                    m = _messages.RetryPromptPart(
+                        content=r.message,
+                    )
+                    raise ToolRetryError(m) from r
+                else:
+                    raise
+
+        return cast(OutputDataT, output)
 
 
 @dataclass(init=False)
@@ -619,7 +712,7 @@ class OutputTool(Generic[OutputDataT]):
 
     def __init__(self, *, name: str, parameters_schema: OutputObjectSchema[OutputDataT], multiple: bool):
         self.parameters_schema = parameters_schema
-        definition = parameters_schema.definition
+        definition = parameters_schema.object_def
 
         description = definition.description
         if not description:

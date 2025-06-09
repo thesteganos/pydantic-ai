@@ -269,7 +269,7 @@ async def _prepare_request_parameters(
     return models.ModelRequestParameters(
         function_tools=function_tool_defs,
         output_mode=output_schema.mode,
-        output_object=output_schema.object_schema.definition if output_schema.object_schema else None,
+        output_object=output_schema.text_output_schema.object_def if output_schema.text_output_schema else None,
         output_tools=output_schema.tool_defs(),
         allow_text_output=output_schema.allow_text_output == 'plain',
     )

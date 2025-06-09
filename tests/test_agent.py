@@ -13,7 +13,7 @@ from pydantic_core import to_json
 from typing_extensions import Self
 
 from pydantic_ai import Agent, ModelRetry, RunContext, UnexpectedModelBehavior, UserError, capture_run_messages
-from pydantic_ai._output import ToolOutput
+from pydantic_ai._output import TextOutput, ToolOutput
 from pydantic_ai.agent import AgentRunResult
 from pydantic_ai.messages import (
     BinaryContent,
@@ -354,7 +354,7 @@ def test_response_tuple():
     m = TestModel()
 
     agent = Agent(m, output_type=tuple[str, str])
-    assert agent._output_schema.allow_text_output is False  # pyright: ignore[reportPrivateUsage]
+    assert agent._output_schema.allow_text_output == 'json'  # pyright: ignore[reportPrivateUsage]
 
     result = agent.run_sync('Hello')
     assert result.output == snapshot(('a', 'a'))
@@ -389,10 +389,28 @@ def test_response_tuple():
     )
 
 
+def upcase(text: str) -> str:
+    return text.upper()
+
+
 @pytest.mark.parametrize(
     'input_union_callable',
-    [lambda: Union[str, Foo], lambda: Union[Foo, str], lambda: str | Foo, lambda: Foo | str, lambda: [Foo, str]],
-    ids=['Union[str, Foo]', 'Union[Foo, str]', 'str | Foo', 'Foo | str', '[Foo, str]'],
+    [
+        lambda: Union[str, Foo],
+        lambda: Union[Foo, str],
+        lambda: str | Foo,
+        lambda: Foo | str,
+        lambda: [Foo, str],
+        lambda: [TextOutput(upcase), ToolOutput(Foo)],
+    ],
+    ids=[
+        'Union[str, Foo]',
+        'Union[Foo, str]',
+        'str | Foo',
+        'Foo | str',
+        '[Foo, str]',
+        '[TextOutput(upcase), ToolOutput(Foo)]',
+    ],
 )
 def test_response_union_allow_str(input_union_callable: Callable[[], Any]):
     try:
@@ -414,7 +432,8 @@ def test_response_union_allow_str(input_union_callable: Callable[[], Any]):
     assert agent._output_schema.allow_text_output == 'plain'  # pyright: ignore[reportPrivateUsage]
 
     result = agent.run_sync('Hello')
-    assert result.output == snapshot('success (no tool calls)')
+    assert isinstance(result.output, str)
+    assert result.output.lower() == snapshot('success (no tool calls)')
     assert got_tool_call_name == snapshot(None)
 
     assert m.last_model_request_parameters is not None
@@ -449,6 +468,7 @@ def test_response_union_allow_str(input_union_callable: Callable[[], Any]):
     [
         pytest.param('OutputType = Union[Foo, Bar]'),
         pytest.param('OutputType = [Foo, Bar]'),
+        pytest.param('OutputType = [ToolOutput(Foo), ToolOutput(Bar)]'),
         pytest.param('OutputType = Foo | Bar', marks=pytest.mark.skipif(sys.version_info < (3, 10), reason='3.10+')),
         pytest.param(
             'OutputType: TypeAlias = Foo | Bar',
@@ -847,6 +867,64 @@ def test_output_type_function_with_retry():
     )
 
 
+def test_output_type_text_output_function_with_retry():
+    class Weather(BaseModel):
+        temperature: float
+        description: str
+
+    def get_weather(city: str) -> Weather:
+        if city != 'Mexico City':
+            raise ModelRetry('City not found, I only know Mexico City')
+        return Weather(temperature=28.7, description='sunny')
+
+    def call_tool(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        assert info.output_tools is not None
+
+        if len(messages) == 1:
+            city = 'New York City'
+        else:
+            city = 'Mexico City'
+
+        return ModelResponse(parts=[TextPart(content=city)])
+
+    agent = Agent(FunctionModel(call_tool), output_type=TextOutput(get_weather))
+    result = agent.run_sync('New York City')
+    assert result.output == snapshot(Weather(temperature=28.7, description='sunny'))
+    assert result.all_messages() == snapshot(
+        [
+            ModelRequest(
+                parts=[
+                    UserPromptPart(
+                        content='New York City',
+                        timestamp=IsDatetime(),
+                    )
+                ]
+            ),
+            ModelResponse(
+                parts=[TextPart(content='New York City')],
+                usage=Usage(requests=1, request_tokens=53, response_tokens=3, total_tokens=56),
+                model_name='function:call_tool:',
+                timestamp=IsDatetime(),
+            ),
+            ModelRequest(
+                parts=[
+                    RetryPromptPart(
+                        content='City not found, I only know Mexico City',
+                        tool_call_id=IsStr(),
+                        timestamp=IsDatetime(),
+                    )
+                ]
+            ),
+            ModelResponse(
+                parts=[TextPart(content='Mexico City')],
+                usage=Usage(requests=1, request_tokens=68, response_tokens=5, total_tokens=73),
+                model_name='function:call_tool:',
+                timestamp=IsDatetime(),
+            ),
+        ]
+    )
+
+
 def test_output_type_async_function():
     class Weather(BaseModel):
         temperature: float
@@ -966,6 +1044,33 @@ def test_output_type_function_or_model():
                     'title': 'Weather',
                     'type': 'object',
                 },
+            ),
+        ]
+    )
+
+
+def test_output_type_text_output_function():
+    def say_world(_: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[TextPart(content='world')])
+
+    agent = Agent(FunctionModel(say_world), output_type=TextOutput(upcase))
+    result = agent.run_sync('hello')
+    assert result.output == snapshot('WORLD')
+    assert result.all_messages() == snapshot(
+        [
+            ModelRequest(
+                parts=[
+                    UserPromptPart(
+                        content='hello',
+                        timestamp=IsDatetime(),
+                    )
+                ]
+            ),
+            ModelResponse(
+                parts=[TextPart(content='world')],
+                usage=Usage(requests=1, request_tokens=51, response_tokens=1, total_tokens=52),
+                model_name='function:say_world:',
+                timestamp=IsDatetime(),
             ),
         ]
     )

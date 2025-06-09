@@ -15,7 +15,7 @@ from pydantic import BaseModel, Discriminator, Field, Tag
 from typing_extensions import TypedDict
 
 from pydantic_ai import Agent, ModelHTTPError, ModelRetry, UnexpectedModelBehavior
-from pydantic_ai._output import ManualJSONOutput
+from pydantic_ai._output import ManualJSONOutput, TextOutput
 from pydantic_ai.messages import (
     AudioUrl,
     BinaryContent,
@@ -1825,6 +1825,85 @@ async def test_openai_tool_output(allow_model_requests: None, openai_api_key: st
                         timestamp=IsDatetime(),
                     )
                 ]
+            ),
+        ]
+    )
+
+
+async def test_openai_text_output_function(allow_model_requests: None, openai_api_key: str):
+    m = OpenAIModel('gpt-4o', provider=OpenAIProvider(api_key=openai_api_key))
+
+    def upcase(text: str) -> str:
+        return text.upper()
+
+    agent = Agent(m, output_type=TextOutput(upcase))
+
+    @agent.tool_plain
+    async def get_user_country() -> str:
+        return 'Mexico'
+
+    result = await agent.run('What is the largest city in the user country?')
+    assert result.output == snapshot('THE LARGEST CITY IN MEXICO IS MEXICO CITY.')
+
+    assert result.all_messages() == snapshot(
+        [
+            ModelRequest(
+                parts=[
+                    UserPromptPart(
+                        content='What is the largest city in the user country?',
+                        timestamp=IsDatetime(),
+                    )
+                ]
+            ),
+            ModelResponse(
+                parts=[
+                    ToolCallPart(tool_name='get_user_country', args='{}', tool_call_id='call_bZpN3tcL7reJvaSfcJhWIUaj')
+                ],
+                usage=Usage(
+                    requests=1,
+                    request_tokens=42,
+                    response_tokens=11,
+                    total_tokens=53,
+                    details={
+                        'accepted_prediction_tokens': 0,
+                        'audio_tokens': 0,
+                        'reasoning_tokens': 0,
+                        'rejected_prediction_tokens': 0,
+                        'cached_tokens': 0,
+                    },
+                ),
+                model_name='gpt-4o-2024-08-06',
+                timestamp=IsDatetime(),
+                vendor_id='chatcmpl-Bgdk2GPEsxXyA9st3DaRFB6bRNXQa',
+            ),
+            ModelRequest(
+                parts=[
+                    ToolReturnPart(
+                        tool_name='get_user_country',
+                        content='Mexico',
+                        tool_call_id='call_bZpN3tcL7reJvaSfcJhWIUaj',
+                        timestamp=IsDatetime(),
+                    )
+                ]
+            ),
+            ModelResponse(
+                parts=[TextPart(content='The largest city in Mexico is Mexico City.')],
+                usage=Usage(
+                    requests=1,
+                    request_tokens=63,
+                    response_tokens=10,
+                    total_tokens=73,
+                    details={
+                        'accepted_prediction_tokens': 0,
+                        'audio_tokens': 0,
+                        'reasoning_tokens': 0,
+                        'rejected_prediction_tokens': 0,
+                        'cached_tokens': 0,
+                    },
+                ),
+                model_name='gpt-4o-2024-08-06',
+                timestamp=IsDatetime(),
+                vendor_id='chatcmpl-Bgdk32OMvBlPIWjnfe4O1S4fVhYiv',
             ),
         ]
     )

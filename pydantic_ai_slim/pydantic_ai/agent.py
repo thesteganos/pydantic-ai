@@ -318,10 +318,10 @@ class Agent(Generic[AgentDepsT, OutputDataT]):
             warnings.warn('`result_retries` is deprecated, use `max_result_retries` instead', DeprecationWarning)
             output_retries = result_retries
 
-        self._output_schema = _output.OutputSchema[OutputDataT].build(
+        self._output_schema = _output.OutputSchema[OutputDataT](
             output_type,
-            self._deprecated_result_tool_name,
-            self._deprecated_result_tool_description,
+            name=self._deprecated_result_tool_name,
+            description=self._deprecated_result_tool_description,
         )
         self._output_validators = []
 
@@ -680,8 +680,12 @@ class Agent(Generic[AgentDepsT, OutputDataT]):
                 *[await func.run(run_context) for func in self._instructions_functions],
             ]
 
-            if output_schema.mode == 'manual_json' and (output_object_schema := output_schema.object_schema):
-                parts.append(output_object_schema.definition.manual_json_instructions)
+            if (
+                output_schema.mode == 'manual_json'
+                and (output_object_schema := output_schema.text_output_schema)
+                and (object_def := output_object_schema.object_def)
+            ):
+                parts.append(object_def.manual_json_instructions)
 
             parts = [p for p in parts if p]
             if not parts:
@@ -1642,10 +1646,10 @@ class Agent(Generic[AgentDepsT, OutputDataT]):
         if output_type is not None:
             if self._output_validators:
                 raise exceptions.UserError('Cannot set a custom run `output_type` when the agent has output validators')
-            schema = _output.OutputSchema[RunOutputDataT].build(
+            schema = _output.OutputSchema[RunOutputDataT](
                 output_type,
-                self._deprecated_result_tool_name,
-                self._deprecated_result_tool_description,
+                name=self._deprecated_result_tool_name,
+                description=self._deprecated_result_tool_description,
             )
         else:
             schema = self._output_schema
