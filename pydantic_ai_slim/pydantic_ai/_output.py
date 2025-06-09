@@ -161,7 +161,7 @@ class TextOutput(Generic[OutputDataT]):
 
 
 @dataclass(init=False)
-class JSONSchemaOutput(Generic[OutputDataT]):
+class JsonSchemaOutput(Generic[OutputDataT]):
     """Marker class to use JSON schema output for outputs."""
 
     output_types: Sequence[OutputTypeOrFunction[OutputDataT]]
@@ -183,7 +183,7 @@ class JSONSchemaOutput(Generic[OutputDataT]):
         self.strict = strict
 
 
-class ManualJSONOutput(Generic[OutputDataT]):
+class ManualJsonOutput(Generic[OutputDataT]):
     """Marker class to use manual JSON mode for outputs."""
 
     output_types: Sequence[OutputTypeOrFunction[OutputDataT]]
@@ -214,8 +214,8 @@ OutputType = TypeAliasType(
         ToolOutput[T_co],
         TextOutput[T_co],
         Sequence[Union[OutputTypeOrFunction[T_co], ToolOutput[T_co], TextOutput[T_co]]],
-        JSONSchemaOutput[T_co],
-        ManualJSONOutput[T_co],
+        JsonSchemaOutput[T_co],
+        ManualJsonOutput[T_co],
     ],
     type_params=(T_co,),
 )
@@ -255,7 +255,7 @@ class OutputSchema(Generic[OutputDataT]):
             self.text_output_schema = OutputTextSchema(output_type)
             return
 
-        if isinstance(output_type, JSONSchemaOutput):
+        if isinstance(output_type, JsonSchemaOutput):
             self.mode = 'json_schema'
             self.text_output_schema = self._build_text_output_schema(
                 output_type.output_types,
@@ -265,7 +265,7 @@ class OutputSchema(Generic[OutputDataT]):
             )
             return
 
-        if isinstance(output_type, ManualJSONOutput):
+        if isinstance(output_type, ManualJsonOutput):
             self.mode = 'manual_json'
             self.text_output_schema = self._build_text_output_schema(
                 output_type.output_types, name=output_type.name, description=output_type.description

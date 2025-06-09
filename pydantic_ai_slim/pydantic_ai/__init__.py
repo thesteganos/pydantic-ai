@@ -12,7 +12,7 @@ from .exceptions import (
 )
 from .format_prompt import format_as_xml
 from .messages import AudioUrl, BinaryContent, DocumentUrl, ImageUrl, VideoUrl
-from .result import JSONSchemaOutput, ManualJSONOutput, ToolOutput
+from .result import JsonSchemaOutput, ManualJsonOutput, ToolOutput
 from .tools import RunContext, Tool
 
 __all__ = (
@@ -43,8 +43,8 @@ __all__ = (
     'RunContext',
     # result
     'ToolOutput',
-    'JSONSchemaOutput',
-    'ManualJSONOutput',
+    'JsonSchemaOutput',
+    'ManualJsonOutput',
     # format_prompt
     'format_as_xml',
 )

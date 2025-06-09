@@ -15,7 +15,7 @@ from pydantic import BaseModel, Discriminator, Field, Tag
 from typing_extensions import TypedDict
 
 from pydantic_ai import Agent, ModelHTTPError, ModelRetry, UnexpectedModelBehavior
-from pydantic_ai._output import ManualJSONOutput, TextOutput
+from pydantic_ai._output import ManualJsonOutput, TextOutput
 from pydantic_ai.messages import (
     AudioUrl,
     BinaryContent,
@@ -35,7 +35,7 @@ from pydantic_ai.profiles import ModelProfile
 from pydantic_ai.profiles._json_schema import InlineDefsJsonSchemaTransformer
 from pydantic_ai.profiles.openai import OpenAIModelProfile, openai_model_profile
 from pydantic_ai.providers.google_gla import GoogleGLAProvider
-from pydantic_ai.result import JSONSchemaOutput, ToolOutput, Usage
+from pydantic_ai.result import JsonSchemaOutput, ToolOutput, Usage
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.tools import ToolDefinition
 
@@ -1847,6 +1847,7 @@ async def test_openai_tool_output(allow_model_requests: None, openai_api_key: st
     )
 
 
+@pytest.mark.vcr()
 async def test_openai_text_output_function(allow_model_requests: None, openai_api_key: str):
     m = OpenAIModel('gpt-4o', provider=OpenAIProvider(api_key=openai_api_key))
 
@@ -1874,7 +1875,7 @@ async def test_openai_text_output_function(allow_model_requests: None, openai_ap
             ),
             ModelResponse(
                 parts=[
-                    ToolCallPart(tool_name='get_user_country', args='{}', tool_call_id='call_bZpN3tcL7reJvaSfcJhWIUaj')
+                    ToolCallPart(tool_name='get_user_country', args='{}', tool_call_id='call_J1YabdC7G7kzEZNbbZopwenH')
                 ],
                 usage=Usage(
                     requests=1,
@@ -1891,14 +1892,14 @@ async def test_openai_text_output_function(allow_model_requests: None, openai_ap
                 ),
                 model_name='gpt-4o-2024-08-06',
                 timestamp=IsDatetime(),
-                vendor_id='chatcmpl-Bgdk2GPEsxXyA9st3DaRFB6bRNXQa',
+                vendor_id='chatcmpl-BgeDFS85bfHosRFEEAvq8reaCPCZ8',
             ),
             ModelRequest(
                 parts=[
                     ToolReturnPart(
                         tool_name='get_user_country',
                         content='Mexico',
-                        tool_call_id='call_bZpN3tcL7reJvaSfcJhWIUaj',
+                        tool_call_id='call_J1YabdC7G7kzEZNbbZopwenH',
                         timestamp=IsDatetime(),
                     )
                 ]
@@ -1920,7 +1921,7 @@ async def test_openai_text_output_function(allow_model_requests: None, openai_ap
                 ),
                 model_name='gpt-4o-2024-08-06',
                 timestamp=IsDatetime(),
-                vendor_id='chatcmpl-Bgdk32OMvBlPIWjnfe4O1S4fVhYiv',
+                vendor_id='chatcmpl-BgeDGX9eDyVrEI56aP2vtIHahBzFH',
             ),
         ]
     )
@@ -1934,7 +1935,7 @@ async def test_openai_json_schema_output(allow_model_requests: None, openai_api_
         city: str
         country: str
 
-    agent = Agent(m, output_type=JSONSchemaOutput(CityLocation))
+    agent = Agent(m, output_type=JsonSchemaOutput(CityLocation))
 
     @agent.tool_plain
     async def get_user_country() -> str:
@@ -2020,7 +2021,7 @@ async def test_openai_json_schema_output_multiple(allow_model_requests: None, op
         language: str
 
     # TODO: Test with functions!
-    agent = Agent(m, output_type=JSONSchemaOutput([CityLocation, CountryLanguage]))
+    agent = Agent(m, output_type=JsonSchemaOutput([CityLocation, CountryLanguage]))
 
     @agent.tool_plain
     async def get_user_country() -> str:
@@ -2107,7 +2108,7 @@ async def test_openai_manual_json_output(allow_model_requests: None, openai_api_
         city: str
         country: str
 
-    agent = Agent(m, output_type=ManualJSONOutput(CityLocation))
+    agent = Agent(m, output_type=ManualJsonOutput(CityLocation))
 
     @agent.tool_plain
     async def get_user_country() -> str:
@@ -2211,7 +2212,7 @@ async def test_openai_manual_json_output_multiple(allow_model_requests: None, op
         language: str
 
     # TODO: Test with functions!
-    agent = Agent(m, output_type=ManualJSONOutput([CityLocation, CountryLanguage]))
+    agent = Agent(m, output_type=ManualJsonOutput([CityLocation, CountryLanguage]))
 
     @agent.tool_plain
     async def get_user_country() -> str:
