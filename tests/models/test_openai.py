@@ -1735,6 +1735,23 @@ async def test_compatible_api_with_tool_calls_without_id(allow_model_requests: N
     assert response.output == snapshot('The current time is Noon.')
 
 
+def test_openai_response_timestamp_milliseconds(allow_model_requests: None):
+    c = completion_message(
+        ChatCompletionMessage(content='world', role='assistant'),
+    )
+    # Some models on OpenRouter return timestamps in milliseconds rather than seconds
+    # https://github.com/pydantic/pydantic-ai/issues/1877
+    c.created = 1748747268000
+
+    mock_client = MockOpenAI.create_mock(c)
+    m = OpenAIModel('gpt-4o', provider=OpenAIProvider(openai_client=mock_client))
+    agent = Agent(m)
+
+    result = agent.run_sync('Hello')
+    response = cast(ModelResponse, result.all_messages()[-1])
+    assert response.timestamp == snapshot(datetime(2025, 6, 1, 3, 7, 48, tzinfo=timezone.utc))
+
+
 @pytest.mark.vcr()
 async def test_openai_tool_output(allow_model_requests: None, openai_api_key: str):
     m = OpenAIModel('gpt-4o', provider=OpenAIProvider(api_key=openai_api_key))

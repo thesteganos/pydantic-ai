@@ -205,7 +205,7 @@ class ManualJSONOutput(Generic[OutputDataT]):
 T_co = TypeVar('T_co', covariant=True)
 
 OutputTypeOrFunction = TypeAliasType(
-    'OutputTypeOrFunction', Union[type[T_co], Callable[..., Awaitable[T_co] | T_co]], type_params=(T_co,)
+    'OutputTypeOrFunction', Union[type[T_co], Callable[..., Union[Awaitable[T_co], T_co]]], type_params=(T_co,)
 )
 OutputType = TypeAliasType(
     'OutputType',
