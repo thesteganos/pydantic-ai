@@ -13,7 +13,7 @@ from inline_snapshot import snapshot
 from pydantic import BaseModel
 
 from pydantic_ai import Agent, UnexpectedModelBehavior, UserError, capture_run_messages
-from pydantic_ai._output import TextOutput
+from pydantic_ai._output import PromptedJsonOutput, TextOutput
 from pydantic_ai.agent import AgentRun
 from pydantic_ai.messages import (
     ModelMessage,
@@ -940,4 +940,24 @@ async def test_stream_iter_structured_validator() -> None:
     assert outputs == [OutputType(value='a (validated)'), OutputType(value='a (validated)')]
 
 
-# TODO: Test streaming structured output coming as text not tool calls
+async def test_stream_output_type_prompted_json():
+    class CityLocation(BaseModel):
+        city: str
+        country: str | None = None
+
+    m = TestModel(custom_output_text='{"city": "Mexico City", "country": "Mexico"}')
+
+    agent = Agent(m, output_type=PromptedJsonOutput(CityLocation))
+
+    async with agent.run_stream('') as result:
+        assert not result.is_complete
+        assert [c async for c in result.stream(debounce_by=None)] == snapshot(
+            [
+                CityLocation(city='Mexico '),
+                CityLocation(city='Mexico City'),
+                CityLocation(city='Mexico City'),
+                CityLocation(city='Mexico City', country='Mexico'),
+                CityLocation(city='Mexico City', country='Mexico'),
+            ]
+        )
+        assert result.is_complete

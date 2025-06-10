@@ -151,12 +151,9 @@ class ToolOutput(Generic[OutputDataT]):
 
 @dataclass
 class TextOutput(Generic[OutputDataT]):
-    """Marker class to use text output for outputs."""
+    """Marker class to use text output with an output function."""
 
-    output_type: (
-        Callable[[RunContext, str], Awaitable[OutputDataT] | OutputDataT]
-        | Callable[[str], Awaitable[OutputDataT] | OutputDataT]
-    )
+    output_function: TextOutputFunction[OutputDataT]
 
 
 @dataclass(init=False)
@@ -183,7 +180,7 @@ class JsonSchemaOutput(Generic[OutputDataT]):
 
 
 class PromptedJsonOutput(Generic[OutputDataT]):
-    """Marker class to use manual JSON mode for outputs."""
+    """Marker class to use prompted JSON mode for outputs."""
 
     output_types: Sequence[OutputTypeOrFunction[OutputDataT]]
     name: str | None
@@ -219,6 +216,15 @@ OutputType = TypeAliasType(
     type_params=(T_co,),
 )
 
+TextOutputFunction = TypeAliasType(
+    'TextOutputFunction',
+    Union[
+        Callable[[RunContext, str], Awaitable[T_co] | T_co],
+        Callable[[str], Awaitable[T_co] | T_co],
+    ],
+    type_params=(T_co,),
+)
+
 OutputMode = Literal['text', 'tool', 'tool_or_text', 'json_schema', 'prompted_json']
 
 
@@ -250,7 +256,6 @@ class OutputSchema(Generic[OutputDataT]):
 
         if output_type is str:
             self.mode = 'text'
-            self.text_output_schema = OutputTextSchema(output_type)
             return
 
         if isinstance(output_type, JsonSchemaOutput):
@@ -295,16 +300,15 @@ class OutputSchema(Generic[OutputDataT]):
                 self.mode = 'tool_or_text'
 
             if isinstance(text_output, TextOutput):
-                self.text_output_schema = OutputTextSchema(text_output.output_type)
-            else:
-                assert text_output is str
-                self.text_output_schema = cast(OutputTextSchema[OutputDataT], OutputTextSchema(text_output))
+                self.text_output_schema = OutputTextSchema(text_output.output_function)
         elif len(tool_outputs) > 0:
             self.mode = 'tool'
         elif len(other_outputs) > 0:
             self.text_output_schema = self._build_text_output_schema(
                 other_outputs, name=name, description=description, strict=strict
             )
+        else:
+            raise UserError('No output type provided.')  # pragma: no cover
 
     @staticmethod
     def _build_tools(
@@ -435,7 +439,9 @@ class OutputSchema(Generic[OutputDataT]):
             Either the validated output data (left) or a retry message (right).
         """
         assert self.allow_text_output is not False
-        assert self.text_output_schema is not None
+
+        if self.text_output_schema is None:
+            return cast(OutputDataT, text)
 
         def strip_markdown_fences(text: str) -> str:
             if text.startswith('{'):
@@ -672,26 +678,23 @@ class OutputObjectSchema(Generic[OutputDataT]):
 
 @dataclass(init=False)
 class OutputTextSchema(Generic[OutputDataT]):
-    _function_schema: _function_schema.FunctionSchema | None = None
-    _str_argument_name: str | None = None
+    _function_schema: _function_schema.FunctionSchema
+    _str_argument_name: str
 
     def __init__(
         self,
-        output_type: type[OutputDataT]
-        | Callable[[RunContext[AgentDepsT], str], Awaitable[OutputDataT] | OutputDataT]
-        | Callable[[str], Awaitable[OutputDataT] | OutputDataT] = str,
+        output_function: TextOutputFunction[OutputDataT],
     ):
-        if inspect.isfunction(output_type) or inspect.ismethod(output_type):
-            self._function_schema = _function_schema.function_schema(output_type, GenerateToolJsonSchema)
+        if inspect.isfunction(output_function) or inspect.ismethod(output_function):
+            self._function_schema = _function_schema.function_schema(output_function, GenerateToolJsonSchema)
+
             arguments_schema = self._function_schema.json_schema.get('properties', {})
             argument_name = next(iter(arguments_schema.keys()), None)
             if argument_name and arguments_schema.get(argument_name, {}).get('type') == 'string':
                 self._str_argument_name = argument_name
                 return
-        elif output_type is str:
-            return
 
-        raise UserError('TextOutput must take the `str` type or a function taking a `str`')
+        raise UserError('TextOutput must take a function taking a `str`')
 
     @property
     def object_def(self) -> None:
@@ -704,19 +707,18 @@ class OutputTextSchema(Generic[OutputDataT]):
         allow_partial: bool = False,
         wrap_validation_errors: bool = True,
     ) -> OutputDataT:
-        output = data
+        args = {self._str_argument_name: data}
 
-        if self._function_schema and self._str_argument_name:
-            try:
-                output = await self._function_schema.call({self._str_argument_name: output}, run_context)
-            except ModelRetry as r:
-                if wrap_validation_errors:
-                    m = _messages.RetryPromptPart(
-                        content=r.message,
-                    )
-                    raise ToolRetryError(m) from r
-                else:
-                    raise  # pragma: lax no cover
+        try:
+            output = await self._function_schema.call(args, run_context)
+        except ModelRetry as r:
+            if wrap_validation_errors:
+                m = _messages.RetryPromptPart(
+                    content=r.message,
+                )
+                raise ToolRetryError(m) from r
+            else:
+                raise  # pragma: lax no cover
 
         return cast(OutputDataT, output)
 

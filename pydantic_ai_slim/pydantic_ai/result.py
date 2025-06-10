@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Generic
 
+from pydantic import ValidationError
 from typing_extensions import TypeVar, assert_type, deprecated, overload
 
 from . import _utils, exceptions, messages as _messages, models
@@ -306,7 +307,11 @@ class StreamedRunResult(Generic[AgentDepsT, OutputDataT]):
             An async iterable of the response data.
         """
         async for structured_message, is_last in self.stream_structured(debounce_by=debounce_by):
-            yield await self.validate_structured_output(structured_message, allow_partial=not is_last)
+            try:
+                yield await self.validate_structured_output(structured_message, allow_partial=not is_last)
+            except ValidationError:
+                if is_last:
+                    raise  # pragma: lax no cover
 
     async def stream_text(self, *, delta: bool = False, debounce_by: float | None = 0.1) -> AsyncIterator[str]:
         """Stream the text result as an async iterable.

@@ -873,7 +873,8 @@ def test_output_type_text_output_function_with_retry():
         temperature: float
         description: str
 
-    def get_weather(city: str) -> Weather:
+    def get_weather(ctx: RunContext[None], city: str) -> Weather:
+        assert ctx is not None
         if city != 'Mexico City':
             raise ModelRetry('City not found, I only know Mexico City')
         return Weather(temperature=28.7, description='sunny')
@@ -928,7 +929,7 @@ def test_output_type_text_output_function_with_retry():
 
 @pytest.mark.parametrize(
     'output_type',
-    [[str, str], [str, TextOutput(upcase)], [TextOutput(upcase), TextOutput(str)]],
+    [[str, str], [str, TextOutput(upcase)], [TextOutput(upcase), TextOutput(upcase)]],
 )
 def test_output_type_multiple_text_output(output_type: OutputType[str]):
     with pytest.raises(UserError, match='Only one text output is allowed.'):
@@ -937,9 +938,9 @@ def test_output_type_multiple_text_output(output_type: OutputType[str]):
 
 def test_output_type_text_output_invalid():
     def int_func(x: int) -> str:
-        return str(int)
+        return str(int)  # pragma: no cover
 
-    with pytest.raises(UserError, match='TextOutput must take the `str` type or a function taking a `str`'):
+    with pytest.raises(UserError, match='TextOutput must take a function taking a `str`'):
         output_type: TextOutput[str] = TextOutput(int_func)  # type: ignore
         Agent('test', output_type=output_type)
 
