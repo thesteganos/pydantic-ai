@@ -757,7 +757,7 @@ async def test_google_json_schema_output_with_tools(allow_model_requests: None, 
 
     @agent.tool_plain
     async def get_user_country() -> str:
-        return 'Mexico'
+        return 'Mexico'  # pragma: no cover
 
     with pytest.raises(UserError, match='Google does not support JSON schema output and tools at the same time.'):
         await agent.run('What is the largest city in the user country?')

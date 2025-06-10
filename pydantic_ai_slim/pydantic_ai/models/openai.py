@@ -273,9 +273,7 @@ class OpenAIModel(Model):
 
         openai_messages = await self._map_messages(messages)
 
-        tools = [self._map_tool_definition(r) for r in model_request_parameters.function_tools]
         response_format: chat.completion_create_params.ResponseFormat | None = None
-
         output_mode = model_request_parameters.output_mode
         if output_mode == 'json_schema':
             output_object = model_request_parameters.output_object
