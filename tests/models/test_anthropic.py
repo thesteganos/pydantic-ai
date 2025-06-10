@@ -1161,6 +1161,7 @@ async def test_anthropic_tool_output(allow_model_requests: None, anthropic_api_k
     )
 
 
+@pytest.mark.vcr()
 async def test_anthropic_text_output_function(allow_model_requests: None, anthropic_api_key: str):
     m = AnthropicModel('claude-3-5-sonnet-latest', provider=AnthropicProvider(api_key=anthropic_api_key))
 
@@ -1176,13 +1177,9 @@ async def test_anthropic_text_output_function(allow_model_requests: None, anthro
     result = await agent.run(
         'What is the largest city in the user country? Use the get_user_country tool and then your own world knowledge.'
     )
-    assert result.output == snapshot("""\
-BASED ON THE RESULT, YOU ARE LOCATED IN MEXICO. \n\
-
-MEXICO CITY (CIUDAD DE MÉXICO) IS THE LARGEST CITY IN MEXICO, WITH A METROPOLITAN AREA POPULATION OF OVER 22 MILLION PEOPLE (2022 ESTIMATES). IT IS NOT ONLY THE LARGEST CITY IN MEXICO BUT ALSO ONE OF THE LARGEST METROPOLITAN AREAS IN THE WORLD. THE CITY PROPER HAS AROUND 9 MILLION INHABITANTS, WHILE THE GREATER METROPOLITAN AREA INCLUDES MANY SURROUNDING MUNICIPALITIES AND EXTENDS INTO THE STATE OF MEXICO.
-
-MEXICO CITY SERVES AS THE COUNTRY'S CAPITAL AND ITS MOST IMPORTANT POLITICAL, ECONOMIC, AND CULTURAL CENTER. IT'S LOCATED IN THE VALLEY OF MEXICO IN THE CENTRAL PART OF THE COUNTRY.\
-""")
+    assert result.output == snapshot(
+        "BASED ON THE RESULT, YOU ARE LOCATED IN MEXICO. THE LARGEST CITY IN MEXICO IS MEXICO CITY (CIUDAD DE MÉXICO), WHICH IS ALSO THE NATION'S CAPITAL. MEXICO CITY HAS A POPULATION OF APPROXIMATELY 9.2 MILLION PEOPLE IN THE CITY PROPER, AND OVER 21 MILLION PEOPLE IN ITS METROPOLITAN AREA, MAKING IT ONE OF THE LARGEST URBAN AGGLOMERATIONS IN THE WORLD. IT IS BOTH THE POLITICAL AND ECONOMIC CENTER OF MEXICO, LOCATED IN THE VALLEY OF MEXICO IN THE CENTRAL PART OF THE COUNTRY."
+    )
 
     assert result.all_messages() == snapshot(
         [
@@ -1199,7 +1196,7 @@ MEXICO CITY SERVES AS THE COUNTRY'S CAPITAL AND ITS MOST IMPORTANT POLITICAL, EC
                     TextPart(
                         content="I'll help you find the largest city in your country. Let me first check your country using the get_user_country tool."
                     ),
-                    ToolCallPart(tool_name='get_user_country', args={}, tool_call_id='toolu_01NtJsHFTSiiBoKpnzGBsg5C'),
+                    ToolCallPart(tool_name='get_user_country', args={}, tool_call_id='toolu_01EZuxfc6MsPsPgrAKQohw3e'),
                 ],
                 usage=Usage(
                     requests=1,
@@ -1215,14 +1212,14 @@ MEXICO CITY SERVES AS THE COUNTRY'S CAPITAL AND ITS MOST IMPORTANT POLITICAL, EC
                 ),
                 model_name='claude-3-5-sonnet-20241022',
                 timestamp=IsDatetime(),
-                vendor_id='msg_01YJQ6kNbtvNpwJboZ9peSEq',
+                vendor_id='msg_014NE4yfV1Yz2vLAJzapxxef',
             ),
             ModelRequest(
                 parts=[
                     ToolReturnPart(
                         tool_name='get_user_country',
                         content='Mexico',
-                        tool_call_id='toolu_01NtJsHFTSiiBoKpnzGBsg5C',
+                        tool_call_id='toolu_01EZuxfc6MsPsPgrAKQohw3e',
                         timestamp=IsDatetime(),
                     )
                 ]
@@ -1230,35 +1227,30 @@ MEXICO CITY SERVES AS THE COUNTRY'S CAPITAL AND ITS MOST IMPORTANT POLITICAL, EC
             ModelResponse(
                 parts=[
                     TextPart(
-                        content="""\
-Based on the result, you are located in Mexico. \n\
-
-Mexico City (Ciudad de México) is the largest city in Mexico, with a metropolitan area population of over 22 million people (2022 estimates). It is not only the largest city in Mexico but also one of the largest metropolitan areas in the world. The city proper has around 9 million inhabitants, while the greater metropolitan area includes many surrounding municipalities and extends into the State of Mexico.
-
-Mexico City serves as the country's capital and its most important political, economic, and cultural center. It's located in the Valley of Mexico in the central part of the country.\
-"""
+                        content="Based on the result, you are located in Mexico. The largest city in Mexico is Mexico City (Ciudad de México), which is also the nation's capital. Mexico City has a population of approximately 9.2 million people in the city proper, and over 21 million people in its metropolitan area, making it one of the largest urban agglomerations in the world. It is both the political and economic center of Mexico, located in the Valley of Mexico in the central part of the country."
                     )
                 ],
                 usage=Usage(
                     requests=1,
                     request_tokens=461,
-                    response_tokens=135,
-                    total_tokens=596,
+                    response_tokens=107,
+                    total_tokens=568,
                     details={
                         'cache_creation_input_tokens': 0,
                         'cache_read_input_tokens': 0,
                         'input_tokens': 461,
-                        'output_tokens': 135,
+                        'output_tokens': 107,
                     },
                 ),
                 model_name='claude-3-5-sonnet-20241022',
                 timestamp=IsDatetime(),
-                vendor_id='msg_013YNHomHSuhmzWZq8iWjvjK',
+                vendor_id='msg_0193srwo7TCx49h97wDwc7K7',
             ),
         ]
     )
 
 
+@pytest.mark.vcr()
 async def test_anthropic_prompted_json_output(allow_model_requests: None, anthropic_api_key: str):
     m = AnthropicModel('claude-3-5-sonnet-latest', provider=AnthropicProvider(api_key=anthropic_api_key))
 
@@ -1296,7 +1288,7 @@ Don't include any text or Markdown fencing before or after.\
             ),
             ModelResponse(
                 parts=[
-                    ToolCallPart(tool_name='get_user_country', args={}, tool_call_id='toolu_01FdQREaVXQbaH7JrFQaTzKb')
+                    ToolCallPart(tool_name='get_user_country', args={}, tool_call_id='toolu_017UryVwtsKsjonhFV3cgV3X')
                 ],
                 usage=Usage(
                     requests=1,
@@ -1312,14 +1304,14 @@ Don't include any text or Markdown fencing before or after.\
                 ),
                 model_name='claude-3-5-sonnet-20241022',
                 timestamp=IsDatetime(),
-                vendor_id='msg_01FjTTxFKgUXP2cp5s3d7fYh',
+                vendor_id='msg_014CpBKzioMqUyLWrMihpvsz',
             ),
             ModelRequest(
                 parts=[
                     ToolReturnPart(
                         tool_name='get_user_country',
                         content='Mexico',
-                        tool_call_id='toolu_01FdQREaVXQbaH7JrFQaTzKb',
+                        tool_call_id='toolu_017UryVwtsKsjonhFV3cgV3X',
                         timestamp=IsDatetime(),
                     )
                 ],
@@ -1347,12 +1339,13 @@ Don't include any text or Markdown fencing before or after.\
                 ),
                 model_name='claude-3-5-sonnet-20241022',
                 timestamp=IsDatetime(),
-                vendor_id='msg_01HrNfqrq9UGB54S5xhbCWY5',
+                vendor_id='msg_014JeWCouH6DpdqzMTaBdkpJ',
             ),
         ]
     )
 
 
+@pytest.mark.vcr()
 async def test_anthropic_prompted_json_output_multiple(allow_model_requests: None, anthropic_api_key: str):
     m = AnthropicModel('claude-3-5-sonnet-latest', provider=AnthropicProvider(api_key=anthropic_api_key))
 
@@ -1406,7 +1399,7 @@ Don't include any text or Markdown fencing before or after.\
                 ),
                 model_name='claude-3-5-sonnet-20241022',
                 timestamp=IsDatetime(),
-                vendor_id='msg_01HyWKS3uRkhUw5mWKJY2iZN',
+                vendor_id='msg_013ttUi3HCcKt7PkJpoWs5FT',
             ),
         ]
     )
