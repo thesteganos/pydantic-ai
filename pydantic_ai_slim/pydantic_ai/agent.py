@@ -329,7 +329,6 @@ class Agent(Generic[AgentDepsT, OutputDataT]):
         self._instructions_functions = []
         if isinstance(instructions, (str, Callable)):
             instructions = [instructions]
-        # TODO: Add OutputSchema to the instructions in JSON mode
         for instruction in instructions or []:
             if isinstance(instruction, str):
                 self._instructions += instruction + '\n'
@@ -1654,8 +1653,6 @@ class Agent(Generic[AgentDepsT, OutputDataT]):
             schema = self._output_schema
 
         if schema.mode is None:
-            # TODO: This may need to be done later, when we know if there are any model_request_parameters.function_tools,
-            # as some models do not support tool calls at the same time as json_schema output, and which mode we pick may be different...
             schema.mode = model_profile.default_output_mode
         if not schema.is_mode_supported(model_profile):
             raise exceptions.UserError(

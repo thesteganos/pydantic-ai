@@ -13,9 +13,11 @@ class ModelProfile:
     """Describes how requests to a specific model or family of models need to be constructed to get the best results, independent of the model and provider classes used."""
 
     json_schema_transformer: type[JsonSchemaTransformer] | None = None
+    """The transformer to use to make JSON schemas for tools and structured output compatible with the model."""
     output_modes: set[Literal['tool', 'json_schema']] = field(default_factory=lambda: {'tool'})
-    # TODO: Add docstrings
+    """The output modes supported by the model. Essentially all models support `tool` mode, but some also support `json_schema` mode, which needs to be specifically implemented on the model class."""
     default_output_mode: Literal['tool', 'json_schema', 'prompted_json'] = 'tool'
+    """The default output mode to use for the model."""
 
     @classmethod
     def from_profile(cls, profile: ModelProfile | None) -> Self:

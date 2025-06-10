@@ -127,7 +127,7 @@ class ToolRetryError(Exception):
 class ToolOutput(Generic[OutputDataT]):
     """Marker class to use tools for outputs, and customize the tool."""
 
-    output_type: OutputTypeOrFunction[OutputDataT]  # TODO: Allow list of types instead of unions?
+    output_type: OutputTypeOrFunction[OutputDataT]
     name: str | None
     description: str | None
     max_retries: int | None
@@ -219,7 +219,6 @@ OutputType = TypeAliasType(
     type_params=(T_co,),
 )
 
-# TODO: Add `json_object` for old OpenAI models, or rename `json_schema` to `json` and choose automatically, relying on Pydantic validation
 OutputMode = Literal['text', 'tool', 'tool_or_text', 'json_schema', 'prompted_json']
 
 
