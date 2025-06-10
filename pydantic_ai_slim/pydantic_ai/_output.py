@@ -287,7 +287,7 @@ class OutputSchema(Generic[OutputDataT]):
 
         if len(text_outputs) > 0:
             if len(text_outputs) > 1:
-                raise UserError('Only one text output is allowed')
+                raise UserError('Only one text output is allowed.')
             text_output = text_outputs[0]
 
             self.mode = 'text'
@@ -301,7 +301,7 @@ class OutputSchema(Generic[OutputDataT]):
                 self.text_output_schema = cast(OutputTextSchema[OutputDataT], OutputTextSchema(text_output))
         elif len(tool_outputs) > 0:
             self.mode = 'tool'
-        else:
+        elif len(other_outputs) > 0:
             self.text_output_schema = self._build_text_output_schema(
                 other_outputs, name=name, description=description, strict=strict
             )
@@ -361,7 +361,7 @@ class OutputSchema(Generic[OutputDataT]):
         strict: bool | None = None,
     ) -> OutputObjectSchema[OutputDataT] | OutputUnionSchema[OutputDataT] | None:
         if len(outputs) == 0:
-            return None
+            return None  # pragma: no cover
 
         outputs = flatten_output_types(outputs)
         if len(outputs) == 1:
@@ -466,9 +466,9 @@ class OutputObjectDefinition:
     def instructions(self) -> str:
         """Get instructions for model to output manual JSON matching the schema."""
         schema = self.json_schema.copy()
-        if self.name and not schema.get('title'):
+        if self.name:
             schema['title'] = self.name
-        if self.description and not schema.get('description'):
+        if self.description:
             schema['description'] = self.description
 
         # Eventually move DEFAULT_PROMPTED_JSON_PROMPT to ModelProfile so it can be tweaked on a per model basis
@@ -650,7 +650,7 @@ class OutputObjectSchema(Generic[OutputDataT]):
                 )
                 raise ToolRetryError(m) from e
             else:
-                raise
+                raise  # pragma: lax no cover
 
         if k := self.outer_typed_dict_key:
             output = output[k]
@@ -665,7 +665,7 @@ class OutputObjectSchema(Generic[OutputDataT]):
                     )
                     raise ToolRetryError(m) from r
                 else:
-                    raise
+                    raise  # pragma: lax no cover
 
         return output
 
@@ -691,7 +691,7 @@ class OutputTextSchema(Generic[OutputDataT]):
         elif output_type is str:
             return
 
-        raise ValueError('OutputTextSchema must take the `str` type or a function taking a `str`')
+        raise UserError('TextOutput must take the `str` type or a function taking a `str`')
 
     @property
     def object_def(self) -> None:
@@ -716,7 +716,7 @@ class OutputTextSchema(Generic[OutputDataT]):
                     )
                     raise ToolRetryError(m) from r
                 else:
-                    raise
+                    raise  # pragma: lax no cover
 
         return cast(OutputDataT, output)
 

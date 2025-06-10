@@ -13,6 +13,7 @@ from inline_snapshot import snapshot
 from pydantic import BaseModel
 
 from pydantic_ai import Agent, UnexpectedModelBehavior, UserError, capture_run_messages
+from pydantic_ai._output import TextOutput
 from pydantic_ai.agent import AgentRun
 from pydantic_ai.messages import (
     ModelMessage,
@@ -190,6 +191,22 @@ async def test_streamed_text_stream():
     async with agent.run_stream('Hello') as result:
         assert [c async for c in result.stream_text(delta=True, debounce_by=None)] == snapshot(
             ['The ', 'cat ', 'sat ', 'on ', 'the ', 'mat.']
+        )
+
+    def upcase(text: str) -> str:
+        return text.upper()
+
+    async with agent.run_stream('Hello', output_type=TextOutput(upcase)) as result:
+        assert [c async for c in result.stream(debounce_by=None)] == snapshot(
+            [
+                'THE ',
+                'THE CAT ',
+                'THE CAT SAT ',
+                'THE CAT SAT ON ',
+                'THE CAT SAT ON THE ',
+                'THE CAT SAT ON THE MAT.',
+                'THE CAT SAT ON THE MAT.',
+            ]
         )
 
     async with agent.run_stream('Hello') as result:
@@ -921,3 +938,6 @@ async def test_stream_iter_structured_validator() -> None:
                     async for output in stream.stream_output(debounce_by=None):
                         outputs.append(output)
     assert outputs == [OutputType(value='a (validated)'), OutputType(value='a (validated)')]
+
+
+# TODO: Test streaming structured output coming as text not tool calls

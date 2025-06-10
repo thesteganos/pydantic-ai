@@ -429,7 +429,7 @@ class OpenAIModel(Model):
         }
         if o.description:
             response_format_param['json_schema']['description'] = o.description
-        if o.strict:
+        if o.strict:  # pragma: no branch
             response_format_param['json_schema']['strict'] = o.strict
         return response_format_param
 
@@ -820,7 +820,7 @@ class OpenAIResponsesModel(Model):
         }
         if o.description:
             response_format_param['description'] = o.description
-        if o.strict:
+        if o.strict:  # pragma: no branch
             response_format_param['strict'] = o.strict
         return response_format_param
 

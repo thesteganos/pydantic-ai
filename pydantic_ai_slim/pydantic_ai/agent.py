@@ -1007,7 +1007,7 @@ class Agent(Generic[AgentDepsT, OutputDataT]):
                                     if isinstance(new_part, _messages.TextPart):
                                         if output_schema.allow_text_output:
                                             return FinalResult(s, None, None)
-                                    elif isinstance(new_part, _messages.ToolCallPart):
+                                    elif isinstance(new_part, _messages.ToolCallPart):  # pragma: no branch
                                         for call, _ in output_schema.find_tool([new_part]):
                                             return FinalResult(s, call.tool_name, call.tool_call_id)
                             return None

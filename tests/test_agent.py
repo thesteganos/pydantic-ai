@@ -13,7 +13,7 @@ from pydantic_core import to_json
 from typing_extensions import Self
 
 from pydantic_ai import Agent, ModelRetry, RunContext, UnexpectedModelBehavior, UserError, capture_run_messages
-from pydantic_ai._output import JsonSchemaOutput, TextOutput, ToolOutput
+from pydantic_ai._output import JsonSchemaOutput, OutputType, PromptedJsonOutput, TextOutput, ToolOutput
 from pydantic_ai.agent import AgentRunResult
 from pydantic_ai.messages import (
     BinaryContent,
@@ -31,6 +31,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.profiles import ModelProfile
 from pydantic_ai.result import Usage
 from pydantic_ai.tools import ToolDefinition
 
@@ -925,6 +926,24 @@ def test_output_type_text_output_function_with_retry():
     )
 
 
+@pytest.mark.parametrize(
+    'output_type',
+    [[str, str], [str, TextOutput(upcase)], [TextOutput(upcase), TextOutput(str)]],
+)
+def test_output_type_multiple_text_output(output_type: OutputType[str]):
+    with pytest.raises(UserError, match='Only one text output is allowed.'):
+        Agent('test', output_type=output_type)
+
+
+def test_output_type_text_output_invalid():
+    def int_func(x: int) -> str:
+        return str(int)
+
+    with pytest.raises(UserError, match='TextOutput must take the `str` type or a function taking a `str`'):
+        output_type: TextOutput[str] = TextOutput(int_func)  # type: ignore
+        Agent('test', output_type=output_type)
+
+
 def test_output_type_async_function():
     class Weather(BaseModel):
         temperature: float
@@ -1230,6 +1249,183 @@ def test_output_type_multiple_custom_tools():
                     'title': 'Weather',
                     'type': 'object',
                 },
+            ),
+        ]
+    )
+
+
+def test_output_type_prompted_json():
+    def return_city_location(_: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        text = CityLocation(city='Mexico City', country='Mexico').model_dump_json()
+        return ModelResponse(parts=[TextPart(content=text)])
+
+    m = FunctionModel(return_city_location)
+
+    class CityLocation(BaseModel):
+        """Description from docstring."""
+
+        city: str
+        country: str
+
+    agent = Agent(
+        m,
+        output_type=PromptedJsonOutput(
+            CityLocation, name='City & Country', description='Description from PromptedJsonOutput'
+        ),
+    )
+
+    result = agent.run_sync('What is the capital of Mexico?')
+    assert result.output == snapshot(CityLocation(city='Mexico City', country='Mexico'))
+    assert result.all_messages() == snapshot(
+        [
+            ModelRequest(
+                parts=[
+                    UserPromptPart(
+                        content='What is the capital of Mexico?',
+                        timestamp=IsDatetime(),
+                    )
+                ],
+                instructions="""\
+Always respond with a JSON object that's compatible with this schema:
+
+{"properties": {"city": {"type": "string"}, "country": {"type": "string"}}, "required": ["city", "country"], "title": "City & Country", "type": "object", "description": "Description from PromptedJsonOutput. Description from docstring."}
+
+Don't include any text or Markdown fencing before or after.\
+""",
+            ),
+            ModelResponse(
+                parts=[TextPart(content='{"city":"Mexico City","country":"Mexico"}')],
+                usage=Usage(requests=1, request_tokens=56, response_tokens=7, total_tokens=63),
+                model_name='function:return_city_location:',
+                timestamp=IsDatetime(),
+            ),
+        ]
+    )
+
+
+def test_output_type_json_schema():
+    def return_city_location(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        if len(messages) == 1:
+            text = '{"city": "Mexico City"}'
+        else:
+            text = '{"city": "Mexico City", "country": "Mexico"}'
+        return ModelResponse(parts=[TextPart(content=text)])
+
+    m = FunctionModel(return_city_location, profile=ModelProfile(output_modes={'tool', 'json_schema'}))
+
+    class CityLocation(BaseModel):
+        city: str
+        country: str
+
+    agent = Agent(
+        m,
+        output_type=JsonSchemaOutput(CityLocation),
+    )
+
+    result = agent.run_sync('What is the capital of Mexico?')
+    assert result.output == snapshot(CityLocation(city='Mexico City', country='Mexico'))
+    assert result.all_messages() == snapshot(
+        [
+            ModelRequest(
+                parts=[
+                    UserPromptPart(
+                        content='What is the capital of Mexico?',
+                        timestamp=IsDatetime(),
+                    )
+                ]
+            ),
+            ModelResponse(
+                parts=[TextPart(content='{"city": "Mexico City"}')],
+                usage=Usage(requests=1, request_tokens=56, response_tokens=5, total_tokens=61),
+                model_name='function:return_city_location:',
+                timestamp=IsDatetime(),
+            ),
+            ModelRequest(
+                parts=[
+                    RetryPromptPart(
+                        content=[
+                            {
+                                'type': 'missing',
+                                'loc': ('country',),
+                                'msg': 'Field required',
+                                'input': {'city': 'Mexico City'},
+                            }
+                        ],
+                        tool_call_id=IsStr(),
+                        timestamp=IsDatetime(),
+                    )
+                ]
+            ),
+            ModelResponse(
+                parts=[TextPart(content='{"city": "Mexico City", "country": "Mexico"}')],
+                usage=Usage(requests=1, request_tokens=85, response_tokens=12, total_tokens=97),
+                model_name='function:return_city_location:',
+                timestamp=IsDatetime(),
+            ),
+        ]
+    )
+
+
+def test_output_type_prompted_json_function_with_retry():
+    class Weather(BaseModel):
+        temperature: float
+        description: str
+
+    def get_weather(city: str) -> Weather:
+        if city != 'Mexico City':
+            raise ModelRetry('City not found, I only know Mexico City')
+        return Weather(temperature=28.7, description='sunny')
+
+    def call_tool(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        assert info.output_tools is not None
+
+        if len(messages) == 1:
+            args_json = '{"city": "New York City"}'
+        else:
+            args_json = '{"city": "Mexico City"}'
+
+        return ModelResponse(parts=[TextPart(content=args_json)])
+
+    agent = Agent(FunctionModel(call_tool), output_type=PromptedJsonOutput(get_weather))
+    result = agent.run_sync('New York City')
+    assert result.output == snapshot(Weather(temperature=28.7, description='sunny'))
+    assert result.all_messages() == snapshot(
+        [
+            ModelRequest(
+                parts=[
+                    UserPromptPart(
+                        content='New York City',
+                        timestamp=IsDatetime(),
+                    )
+                ],
+                instructions="""\
+Always respond with a JSON object that's compatible with this schema:
+
+{"additionalProperties": false, "properties": {"city": {"type": "string"}}, "required": ["city"], "type": "object", "title": "get_weather"}
+
+Don't include any text or Markdown fencing before or after.\
+""",
+            ),
+            ModelResponse(
+                parts=[TextPart(content='{"city": "New York City"}')],
+                usage=Usage(requests=1, request_tokens=53, response_tokens=6, total_tokens=59),
+                model_name='function:call_tool:',
+                timestamp=IsDatetime(),
+            ),
+            ModelRequest(
+                parts=[
+                    RetryPromptPart(
+                        content='City not found, I only know Mexico City',
+                        tool_call_id=IsStr(),
+                        timestamp=IsDatetime(),
+                    )
+                ]
+            ),
+            ModelResponse(
+                parts=[TextPart(content='{"city": "Mexico City"}')],
+                usage=Usage(requests=1, request_tokens=68, response_tokens=11, total_tokens=79),
+                model_name='function:call_tool:',
+                timestamp=IsDatetime(),
             ),
         ]
     )
