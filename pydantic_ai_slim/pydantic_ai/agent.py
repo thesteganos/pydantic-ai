@@ -1655,9 +1655,8 @@ class Agent(Generic[AgentDepsT, OutputDataT]):
         if schema.mode is None:
             schema.mode = model_profile.default_output_mode
         if not schema.is_mode_supported(model_profile):
-            raise exceptions.UserError(
-                f"Output mode '{schema.mode}' is not among supported modes: {model_profile.output_modes}"
-            )
+            modes = ', '.join(f"'{m}'" for m in model_profile.output_modes)
+            raise exceptions.UserError(f"Output mode '{schema.mode}' is not among supported modes: {modes}")
 
         return schema  # pyright: ignore[reportReturnType]
 
