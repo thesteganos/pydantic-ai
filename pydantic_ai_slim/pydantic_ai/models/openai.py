@@ -694,12 +694,12 @@ class OpenAIResponsesModel(Model):
         ):
             text = {'format': {'type': 'json_object'}}
 
-            if isinstance(instructions, str):
-                # Without this trick, we'd hit this error:
-                # > Response input messages must contain the word 'json' in some form to use 'text.format' of type 'json_object'.
-                # Apparently they're only checking input messages for "JSON", not instructions.
-                openai_messages.insert(0, responses.EasyInputMessageParam(role='system', content=instructions))
-                instructions = NOT_GIVEN
+            # Without this trick, we'd hit this error:
+            # > Response input messages must contain the word 'json' in some form to use 'text.format' of type 'json_object'.
+            # Apparently they're only checking input messages for "JSON", not instructions.
+            assert isinstance(instructions, str)
+            openai_messages.insert(0, responses.EasyInputMessageParam(role='system', content=instructions))
+            instructions = NOT_GIVEN
 
         try:
             extra_headers = model_settings.get('extra_headers', {})

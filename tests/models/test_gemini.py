@@ -1560,6 +1560,8 @@ async def test_gemini_json_schema_output(allow_model_requests: None, gemini_api_
     m = GeminiModel('gemini-2.0-flash', provider=GoogleGLAProvider(api_key=gemini_api_key))
 
     class CityLocation(BaseModel):
+        """A city and its country."""
+
         city: str
         country: str
 

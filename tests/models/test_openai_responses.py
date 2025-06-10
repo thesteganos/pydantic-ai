@@ -662,6 +662,8 @@ async def test_json_schema_output(allow_model_requests: None, openai_api_key: st
     m = OpenAIResponsesModel('gpt-4o', provider=OpenAIProvider(api_key=openai_api_key))
 
     class CityLocation(BaseModel):
+        """A city and its country."""
+
         city: str
         country: str
 

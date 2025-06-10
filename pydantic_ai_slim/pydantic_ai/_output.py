@@ -296,7 +296,8 @@ class OutputSchema(Generic[OutputDataT]):
 
             if isinstance(text_output, TextOutput):
                 self.text_output_schema = OutputTextSchema(text_output.output_type)
-            elif text_output is str:
+            else:
+                assert text_output is str
                 self.text_output_schema = cast(OutputTextSchema[OutputDataT], OutputTextSchema(text_output))
         elif len(tool_outputs) > 0:
             self.mode = 'tool'
@@ -556,7 +557,7 @@ class OutputUnionSchema(Generic[OutputDataT]):
         try:
             object_schema = self._object_schemas[kind]
         except KeyError as e:
-            raise ToolRetryError(_messages.RetryPromptPart(content=f'Invalid kind: {kind}')) from e
+            raise ToolRetryError(_messages.RetryPromptPart(content=f'Invalid kind: {kind}')) from e  # pragma: no cover
 
         return await object_schema.process(
             data, run_context, allow_partial=allow_partial, wrap_validation_errors=wrap_validation_errors

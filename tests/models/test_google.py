@@ -767,6 +767,8 @@ async def test_google_json_schema_output(allow_model_requests: None, google_prov
     m = GoogleModel('gemini-2.0-flash', provider=google_provider)
 
     class CityLocation(BaseModel):
+        """A city and its country."""
+
         city: str
         country: str
 

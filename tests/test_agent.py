@@ -13,7 +13,7 @@ from pydantic_core import to_json
 from typing_extensions import Self
 
 from pydantic_ai import Agent, ModelRetry, RunContext, UnexpectedModelBehavior, UserError, capture_run_messages
-from pydantic_ai._output import TextOutput, ToolOutput
+from pydantic_ai._output import JsonSchemaOutput, TextOutput, ToolOutput
 from pydantic_ai.agent import AgentRunResult
 from pydantic_ai.messages import (
     BinaryContent,
@@ -2724,3 +2724,13 @@ def test_tool_call_with_validation_value_error_serializable():
             'kind': 'request',
         }
     )
+
+
+def test_unsupported_output_mode():
+    class Foo(BaseModel):
+        bar: str
+
+    agent = Agent('test', output_type=JsonSchemaOutput(Foo))
+
+    with pytest.raises(UserError, match="Output mode 'json_schema' is not among supported modes: 'tool'"):
+        agent.run_sync('Hello')
