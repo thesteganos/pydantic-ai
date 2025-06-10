@@ -16,6 +16,8 @@ from typing_extensions import NotRequired, TypedDict, assert_never
 from pydantic_ai.providers import Provider, infer_provider
 
 from .. import ModelHTTPError, UnexpectedModelBehavior, _utils, usage
+from .._output import OutputObjectDefinition
+from ..exceptions import UserError
 from ..messages import (
     AudioUrl,
     BinaryContent,
@@ -192,12 +194,12 @@ class GeminiModel(Model):
     def _get_tool_config(
         self, model_request_parameters: ModelRequestParameters, tools: _GeminiTools | None
     ) -> _GeminiToolConfig | None:
-        if model_request_parameters.output_mode != 'tool':
-            return None
-        elif tools:
+        if not tools:
+            return _tool_config([])  # pragma: no cover
+        elif model_request_parameters.output_mode == 'tool':
             return _tool_config([t['name'] for t in tools['function_declarations']])
         else:
-            return _tool_config([])  # pragma: no cover
+            return None
 
     @asynccontextmanager
     async def _make_request(
@@ -218,6 +220,19 @@ class GeminiModel(Model):
             request_data['tools'] = tools
         if tool_config is not None:
             request_data['toolConfig'] = tool_config
+
+        output_mode = model_request_parameters.output_mode
+        if output_mode == 'json_schema':
+            request_data['responseMimeType'] = 'application/json'
+
+            output_object = model_request_parameters.output_object
+            assert output_object is not None
+            request_data['responseSchema'] = self._map_response_schema(output_object)
+
+            if tools:
+                raise UserError('Google does not support JSON schema output and tools at the same time.')
+        elif output_mode == 'prompted_json' and not tools:
+            request_data['responseMimeType'] = 'application/json'
 
         generation_config = _settings_to_generation_config(model_settings)
         if generation_config:
@@ -361,6 +376,15 @@ class GeminiModel(Model):
                     assert_never(item)
         return content
 
+    def _map_response_schema(self, o: OutputObjectDefinition) -> dict[str, Any]:
+        response_schema = o.json_schema.copy()
+        if o.name:
+            response_schema['title'] = o.name
+        if o.description:
+            response_schema['description'] = o.description
+
+        return response_schema
+
 
 def _settings_to_generation_config(model_settings: GeminiModelSettings) -> _GeminiGenerationConfig:
     config: _GeminiGenerationConfig = {}
@@ -503,6 +527,9 @@ class _GeminiRequest(TypedDict):
     """
     generationConfig: NotRequired[_GeminiGenerationConfig]
     labels: NotRequired[dict[str, str]]
+
+    responseMimeType: NotRequired[str]
+    responseSchema: NotRequired[dict[str, Any]]
 
 
 class GeminiSafetySettings(TypedDict):

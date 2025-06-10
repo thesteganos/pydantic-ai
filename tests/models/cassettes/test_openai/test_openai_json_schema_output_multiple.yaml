@@ -97,7 +97,7 @@ interactions:
       openai-organization:
       - pydantic-28gund
       openai-processing-ms:
-      - '999'
+      - '868'
       openai-version:
       - '2020-10-01'
       strict-transport-security:
@@ -118,10 +118,10 @@ interactions:
           - function:
               arguments: '{}'
               name: get_user_country
-            id: call_NiLmkD3Yi30ax2IY7t14e3AP
+            id: call_SIttSeiOistt33Htj4oiHOOX
             type: function
-      created: 1748919916
-      id: chatcmpl-BeCFgrwfENi1OwavvP8itSOMTKjwY
+      created: 1749511286
+      id: chatcmpl-Bgg5utuCSXMQ38j0n2qgfdQKcR9VD
       model: gpt-4o-2024-08-06
       object: chat.completion
       service_tier: default
@@ -154,8 +154,8 @@ interactions:
       content-type:
       - application/json
       cookie:
-      - __cf_bm=4QxpNnP8_u4FyljGgYUUF5NYWCyqa2OJvgxKjyMEh4Y-1748919917-1.0.1.1-LsEozdwJs4K6NOAxtY3kw9dzZ6JHe.l4h4qkIENfShBXiUE6C5V9ED_hCbYeM.GMdC13g7SAlw1iuh5HCTMtOzNvTr_j_jvPbLY3p35HCbM;
-        _cfuvid=.3C6J8WR_NWUd_EBaQOj9bFncgO.R9A8576Zi3GczTg-1748919917308-0.0.1.1-604800000
+      - __cf_bm=OFzdr.HrmtC0DNdnfrTQYsK8_PwAVR9GUqjYSCgwtVM-1749511286-1.0.1.1-9_dbth7ET4rzl01UDRTw3fY1nJ20FnMCC0BBmd57gzKF8n5DnNQaI4K1mT.23nn9IUsMyHAZUNn6t1EML3d7GfGJyiLZOxrTWaqacALgzlM;
+        _cfuvid=f32dQYPsRd6Jc7kg.3hHa1QYAyG8f_aMMXUF.bC6gmY-1749511286914-0.0.1.1-604800000
       host:
       - api.openai.com
     method: POST
@@ -168,11 +168,11 @@ interactions:
         - function:
             arguments: '{}'
             name: get_user_country
-          id: call_NiLmkD3Yi30ax2IY7t14e3AP
+          id: call_SIttSeiOistt33Htj4oiHOOX
           type: function
       - content: Mexico
         role: tool
-        tool_call_id: call_NiLmkD3Yi30ax2IY7t14e3AP
+        tool_call_id: call_SIttSeiOistt33Htj4oiHOOX
       model: gpt-4o
       response_format:
         json_schema:
@@ -252,7 +252,7 @@ interactions:
       openai-organization:
       - pydantic-28gund
       openai-processing-ms:
-      - '867'
+      - '920'
       openai-version:
       - '2020-10-01'
       strict-transport-security:
@@ -269,8 +269,8 @@ interactions:
           content: '{"result":{"kind":"CityLocation","data":{"city":"Mexico City","country":"Mexico"}}}'
           refusal: null
           role: assistant
-      created: 1748919918
-      id: chatcmpl-BeCFiQtbjmFUzYbmXlkAEWbc0peoL
+      created: 1749511287
+      id: chatcmpl-Bgg5vrxUtCDlvgMreoxYxPaKxANmd
       model: gpt-4o-2024-08-06
       object: chat.completion
       service_tier: default

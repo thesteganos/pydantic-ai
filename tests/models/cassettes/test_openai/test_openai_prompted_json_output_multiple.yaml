@@ -8,7 +8,7 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '1438'
+      - '1412'
       content-type:
       - application/json
       host:
@@ -17,9 +17,7 @@ interactions:
     parsed_body:
       messages:
       - content: |-
-          Always respond with a JSON object matching this description and schema:
-
-          final_result: The final response which ends this conversation
+          Always respond with a JSON object that's compatible with this schema:
 
           {"type": "object", "properties": {"result": {"anyOf": [{"type": "object", "properties": {"kind": {"const": "CityLocation"}, "data": {"properties": {"city": {"type": "string"}, "country": {"type": "string"}}, "required": ["city", "country"], "title": "CityLocation", "type": "object"}}, "description": "CityLocation", "required": ["kind", "data"], "additionalProperties": false}, {"type": "object", "properties": {"kind": {"const": "CountryLanguage"}, "data": {"properties": {"country": {"type": "string"}, "language": {"type": "string"}}, "required": ["country", "language"], "title": "CountryLanguage", "type": "object"}}, "description": "CountryLanguage", "required": ["kind", "data"], "additionalProperties": false}]}}, "required": ["result"], "additionalProperties": false}
 
@@ -28,6 +26,8 @@ interactions:
       - content: What is the largest city in the user country?
         role: user
       model: gpt-4o
+      response_format:
+        type: json_object
       stream: false
       tool_choice: auto
       tools:
@@ -55,7 +55,7 @@ interactions:
       openai-organization:
       - pydantic-28gund
       openai-processing-ms:
-      - '549'
+      - '428'
       openai-version:
       - '2020-10-01'
       strict-transport-security:
@@ -76,14 +76,14 @@ interactions:
           - function:
               arguments: '{}'
               name: get_user_country
-            id: call_W3kwVF2ZX9cZ2L9NnbSDSs3V
+            id: call_wJD14IyJ4KKVtjCrGyNCHO09
             type: function
-      created: 1748928408
-      id: chatcmpl-BeESepFYXE1ELAEvKlRNvsRzzYkOg
+      created: 1749514898
+      id: chatcmpl-Bgh2AW2NXGgMc7iS639MJXNRgtatR
       model: gpt-4o-2024-08-06
       object: chat.completion
       service_tier: default
-      system_fingerprint: fp_a288987b44
+      system_fingerprint: fp_9bddfca6e2
       usage:
         completion_tokens: 11
         completion_tokens_details:
@@ -91,11 +91,11 @@ interactions:
           audio_tokens: 0
           reasoning_tokens: 0
           rejected_prediction_tokens: 0
-        prompt_tokens: 284
+        prompt_tokens: 273
         prompt_tokens_details:
           audio_tokens: 0
           cached_tokens: 0
-        total_tokens: 295
+        total_tokens: 284
     status:
       code: 200
       message: OK
@@ -108,21 +108,19 @@ interactions:
       connection:
       - keep-alive
       content-length:
-      - '1669'
+      - '1643'
       content-type:
       - application/json
       cookie:
-      - __cf_bm=bTNTDMnAXJaO9CpT6TAFSQOHtSGvSowNKQi20qZpxKU-1748928408-1.0.1.1-RtnC2hZt1TL38SpAb3dXL5bL7Q7EuNYgc0.18VudHVT7WzCWgkYNSYscp6aLzd9yCQaDu__K1Q2tP05IZqU3y2KwNh0JTcuf.o8GEEG_kbY;
-        _cfuvid=6ycbGPnBJWGLcM9mdMSLys2eUHapvWyYqbWltcaQhkQ-1748928408894-0.0.1.1-604800000
+      - __cf_bm=gqjIEMZSez95CPkkPVuU_AoDutHrobFMbFPjq43G66M-1749514899-1.0.1.1-5TGB9WajW5pzCRtVtWeQfiwyQUZs1JwWy9qC8VGlgq7s5pQWKerukQtYB7GqNDrdb.1pbtFyt2HZ9xV3YiSbK4H1bZS_hS1CCeoup_3IQW0;
+        _cfuvid=ZN6eoNau4b.bJ8kvRn2z9R0HgTUd9nOsupKUtLXQowU-1749514899280-0.0.1.1-604800000
       host:
       - api.openai.com
     method: POST
     parsed_body:
       messages:
       - content: |-
-          Always respond with a JSON object matching this description and schema:
-
-          final_result: The final response which ends this conversation
+          Always respond with a JSON object that's compatible with this schema:
 
           {"type": "object", "properties": {"result": {"anyOf": [{"type": "object", "properties": {"kind": {"const": "CityLocation"}, "data": {"properties": {"city": {"type": "string"}, "country": {"type": "string"}}, "required": ["city", "country"], "title": "CityLocation", "type": "object"}}, "description": "CityLocation", "required": ["kind", "data"], "additionalProperties": false}, {"type": "object", "properties": {"kind": {"const": "CountryLanguage"}, "data": {"properties": {"country": {"type": "string"}, "language": {"type": "string"}}, "required": ["country", "language"], "title": "CountryLanguage", "type": "object"}}, "description": "CountryLanguage", "required": ["kind", "data"], "additionalProperties": false}]}}, "required": ["result"], "additionalProperties": false}
 
@@ -135,12 +133,14 @@ interactions:
         - function:
             arguments: '{}'
             name: get_user_country
-          id: call_W3kwVF2ZX9cZ2L9NnbSDSs3V
+          id: call_wJD14IyJ4KKVtjCrGyNCHO09
           type: function
       - content: Mexico
         role: tool
-        tool_call_id: call_W3kwVF2ZX9cZ2L9NnbSDSs3V
+        tool_call_id: call_wJD14IyJ4KKVtjCrGyNCHO09
       model: gpt-4o
+      response_format:
+        type: json_object
       stream: false
       tool_choice: auto
       tools:
@@ -168,7 +168,7 @@ interactions:
       openai-organization:
       - pydantic-28gund
       openai-processing-ms:
-      - '900'
+      - '763'
       openai-version:
       - '2020-10-01'
       strict-transport-security:
@@ -185,12 +185,12 @@ interactions:
           content: '{"result":{"kind":"CityLocation","data":{"city":"Mexico City","country":"Mexico"}}}'
           refusal: null
           role: assistant
-      created: 1748928409
-      id: chatcmpl-BeESfsdYDCQwP7kGM4r5i8KXwllkT
+      created: 1749514899
+      id: chatcmpl-Bgh2BthuopRnSqCuUgMbBnOqgkDHC
       model: gpt-4o-2024-08-06
       object: chat.completion
       service_tier: default
-      system_fingerprint: fp_a288987b44
+      system_fingerprint: fp_9bddfca6e2
       usage:
         completion_tokens: 21
         completion_tokens_details:
@@ -198,11 +198,11 @@ interactions:
           audio_tokens: 0
           reasoning_tokens: 0
           rejected_prediction_tokens: 0
-        prompt_tokens: 305
+        prompt_tokens: 294
         prompt_tokens_details:
           audio_tokens: 0
           cached_tokens: 0
-        total_tokens: 326
+        total_tokens: 315
     status:
       code: 200
       message: OK

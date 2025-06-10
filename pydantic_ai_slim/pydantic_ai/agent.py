@@ -676,11 +676,11 @@ class Agent(Generic[AgentDepsT, OutputDataT]):
             ]
 
             if (
-                output_schema.mode == 'manual_json'
+                output_schema.mode == 'prompted_json'
                 and (output_object_schema := output_schema.text_output_schema)
                 and (object_def := output_object_schema.object_def)
             ):
-                parts.append(object_def.manual_json_instructions)
+                parts.append(object_def.instructions)
 
             parts = [p for p in parts if p]
             if not parts:

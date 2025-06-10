@@ -10,7 +10,7 @@ from ._json_schema import JsonSchema, JsonSchemaTransformer
 
 def google_model_profile(model_name: str) -> ModelProfile | None:
     """Get the model profile for a Google model."""
-    return ModelProfile(json_schema_transformer=GoogleJsonSchemaTransformer)
+    return ModelProfile(json_schema_transformer=GoogleJsonSchemaTransformer, output_modes={'tool', 'json_schema'})
 
 
 class GoogleJsonSchemaTransformer(JsonSchemaTransformer):

@@ -2,6 +2,7 @@ from __future__ import annotations as _annotations
 
 import inspect
 import json
+import re
 from collections.abc import Awaitable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from textwrap import dedent
@@ -54,11 +55,9 @@ Usage `OutputValidatorFunc[AgentDepsT, T]`.
 
 DEFAULT_OUTPUT_TOOL_NAME = 'final_result'
 DEFAULT_OUTPUT_TOOL_DESCRIPTION = 'The final response which ends this conversation'
-DEFAULT_MANUAL_JSON_PROMPT = dedent(  # TODO: Move to ModelProfile
+DEFAULT_PROMPTED_JSON_PROMPT = dedent(
     """
-    Always respond with a JSON object matching this description and schema:
-
-    {description}
+    Always respond with a JSON object that's compatible with this schema:
 
     {schema}
 
@@ -175,7 +174,7 @@ class JsonSchemaOutput(Generic[OutputDataT]):
         *,
         name: str | None = None,
         description: str | None = None,
-        strict: bool | None = None,
+        strict: bool | None = True,
     ):
         self.output_types = flatten_output_types(type_)
         self.name = name
@@ -183,7 +182,7 @@ class JsonSchemaOutput(Generic[OutputDataT]):
         self.strict = strict
 
 
-class ManualJsonOutput(Generic[OutputDataT]):
+class PromptedJsonOutput(Generic[OutputDataT]):
     """Marker class to use manual JSON mode for outputs."""
 
     output_types: Sequence[OutputTypeOrFunction[OutputDataT]]
@@ -215,13 +214,13 @@ OutputType = TypeAliasType(
         TextOutput[T_co],
         Sequence[Union[OutputTypeOrFunction[T_co], ToolOutput[T_co], TextOutput[T_co]]],
         JsonSchemaOutput[T_co],
-        ManualJsonOutput[T_co],
+        PromptedJsonOutput[T_co],
     ],
     type_params=(T_co,),
 )
 
 # TODO: Add `json_object` for old OpenAI models, or rename `json_schema` to `json` and choose automatically, relying on Pydantic validation
-OutputMode = Literal['text', 'tool', 'tool_or_text', 'json_schema', 'manual_json']
+OutputMode = Literal['text', 'tool', 'tool_or_text', 'json_schema', 'prompted_json']
 
 
 @dataclass(init=False)
@@ -265,8 +264,8 @@ class OutputSchema(Generic[OutputDataT]):
             )
             return
 
-        if isinstance(output_type, ManualJsonOutput):
-            self.mode = 'manual_json'
+        if isinstance(output_type, PromptedJsonOutput):
+            self.mode = 'prompted_json'
             self.text_output_schema = self._build_text_output_schema(
                 output_type.output_types, name=output_type.name, description=output_type.description
             )
@@ -368,7 +367,7 @@ class OutputSchema(Generic[OutputDataT]):
         if len(outputs) == 1:
             return OutputObjectSchema(output_type=outputs[0], name=name, description=description, strict=strict)
 
-        return OutputUnionSchema(output_types=outputs, name=name, description=description, strict=strict)
+        return OutputUnionSchema(output_types=outputs, strict=strict)
 
     @property
     def allow_text_output(self) -> Literal['plain', 'json', False]:
@@ -382,7 +381,7 @@ class OutputSchema(Generic[OutputDataT]):
     def is_mode_supported(self, profile: ModelProfile) -> bool:
         """Whether the model supports the output mode."""
         mode = self.mode
-        if mode in ('text', 'manual_json'):
+        if mode in ('text', 'prompted_json'):
             return True
         if self.mode == 'tool_or_text':
             mode = 'tool'
@@ -413,6 +412,8 @@ class OutputSchema(Generic[OutputDataT]):
 
     def tool_defs(self) -> list[ToolDefinition]:
         """Get tool definitions to register with the model."""
+        if self.mode not in ('tool', 'tool_or_text'):
+            return []
         return [t.tool_def for t in self.tools.values()]
 
     async def process(
@@ -436,7 +437,19 @@ class OutputSchema(Generic[OutputDataT]):
         assert self.allow_text_output is not False
         assert self.text_output_schema is not None
 
-        # TODO: Strip Markdown fences?
+        def strip_markdown_fences(text: str) -> str:
+            if text.startswith('{'):
+                return text
+
+            regex = r'```(?:\w+)?\n(\{.*\})\n```'
+            match = re.search(regex, text, re.DOTALL)
+            if match:
+                return match.group(1)
+
+            return text
+
+        text = strip_markdown_fences(text)
+
         return await self.text_output_schema.process(
             text, run_context, allow_partial=allow_partial, wrap_validation_errors=wrap_validation_errors
         )
@@ -444,17 +457,22 @@ class OutputSchema(Generic[OutputDataT]):
 
 @dataclass
 class OutputObjectDefinition:
-    name: str
     json_schema: ObjectJsonSchema
+    name: str | None = None
     description: str | None = None
     strict: bool | None = None
 
     @property
-    def manual_json_instructions(self) -> str:
+    def instructions(self) -> str:
         """Get instructions for model to output manual JSON matching the schema."""
-        # TODO: Move to ModelProfile so it can be tweaked
-        description = ': '.join([v for v in [self.name, self.description] if v])
-        return DEFAULT_MANUAL_JSON_PROMPT.format(schema=json.dumps(self.json_schema), description=description)
+        schema = self.json_schema.copy()
+        if self.name and not schema.get('title'):
+            schema['title'] = self.name
+        if self.description and not schema.get('description'):
+            schema['description'] = self.description
+
+        # Eventually move DEFAULT_PROMPTED_JSON_PROMPT to ModelProfile so it can be tweaked on a per model basis
+        return DEFAULT_PROMPTED_JSON_PROMPT.format(schema=json.dumps(schema))
 
 
 @dataclass(init=False)
@@ -478,14 +496,13 @@ class OutputUnionSchema(Generic[OutputDataT]):
     def __init__(
         self,
         output_types: Sequence[OutputTypeOrFunction[OutputDataT]],
-        name: str | None = None,
-        description: str | None = None,
         strict: bool | None = None,
     ):
         self._object_schemas = {}
         # TODO: Ensure keys are unique
         self._object_schemas = {
-            output_type.__name__: OutputObjectSchema(output_type=output_type) for output_type in output_types
+            output_type.__name__: OutputObjectSchema(output_type=output_type, strict=strict)
+            for output_type in output_types
         }
 
         self._root_object_schema = OutputObjectSchema(output_type=OutputUnionData)
@@ -500,6 +517,7 @@ class OutputUnionSchema(Generic[OutputDataT]):
                             'type': 'object',
                             'properties': {
                                 'kind': {
+                                    'type': 'string',
                                     'const': name,
                                 },
                                 'data': object_schema.object_def.json_schema,  # TODO: Pop description here?
@@ -517,8 +535,6 @@ class OutputUnionSchema(Generic[OutputDataT]):
         }
 
         self.object_def = OutputObjectDefinition(
-            name=name or DEFAULT_OUTPUT_TOOL_NAME,
-            description=description or DEFAULT_OUTPUT_TOOL_DESCRIPTION,
             json_schema=json_schema,
             strict=strict,
         )
@@ -597,7 +613,7 @@ class OutputObjectSchema(Generic[OutputDataT]):
                 description = f'{description}. {json_schema_description}'
 
         self.object_def = OutputObjectDefinition(
-            name=name or getattr(output_type, '__name__', DEFAULT_OUTPUT_TOOL_NAME),
+            name=name or getattr(output_type, '__name__'),
             description=description,
             json_schema=json_schema,
             strict=strict,

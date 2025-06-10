@@ -15,7 +15,6 @@ from pydantic import BaseModel, Discriminator, Field, Tag
 from typing_extensions import TypedDict
 
 from pydantic_ai import Agent, ModelHTTPError, ModelRetry, UnexpectedModelBehavior
-from pydantic_ai._output import ManualJsonOutput, TextOutput
 from pydantic_ai.messages import (
     AudioUrl,
     BinaryContent,
@@ -35,7 +34,7 @@ from pydantic_ai.profiles import ModelProfile
 from pydantic_ai.profiles._json_schema import InlineDefsJsonSchemaTransformer
 from pydantic_ai.profiles.openai import OpenAIModelProfile, openai_model_profile
 from pydantic_ai.providers.google_gla import GoogleGLAProvider
-from pydantic_ai.result import JsonSchemaOutput, ToolOutput, Usage
+from pydantic_ai.result import JsonSchemaOutput, PromptedJsonOutput, TextOutput, ToolOutput, Usage
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.tools import ToolDefinition
 
@@ -2020,14 +2019,11 @@ async def test_openai_json_schema_output_multiple(allow_model_requests: None, op
         country: str
         language: str
 
-    # TODO: Test with functions!
     agent = Agent(m, output_type=JsonSchemaOutput([CityLocation, CountryLanguage]))
 
     @agent.tool_plain
     async def get_user_country() -> str:
         return 'Mexico'
-
-    # TODO: Show what response_format looks like
 
     result = await agent.run('What is the largest city in the user country?')
     assert result.output == snapshot(CityLocation(city='Mexico City', country='Mexico'))
@@ -2044,7 +2040,7 @@ async def test_openai_json_schema_output_multiple(allow_model_requests: None, op
             ),
             ModelResponse(
                 parts=[
-                    ToolCallPart(tool_name='get_user_country', args='{}', tool_call_id='call_NiLmkD3Yi30ax2IY7t14e3AP')
+                    ToolCallPart(tool_name='get_user_country', args='{}', tool_call_id='call_SIttSeiOistt33Htj4oiHOOX')
                 ],
                 usage=Usage(
                     requests=1,
@@ -2061,14 +2057,14 @@ async def test_openai_json_schema_output_multiple(allow_model_requests: None, op
                 ),
                 model_name='gpt-4o-2024-08-06',
                 timestamp=IsDatetime(),
-                vendor_id='chatcmpl-BeCFgrwfENi1OwavvP8itSOMTKjwY',
+                vendor_id='chatcmpl-Bgg5utuCSXMQ38j0n2qgfdQKcR9VD',
             ),
             ModelRequest(
                 parts=[
                     ToolReturnPart(
                         tool_name='get_user_country',
                         content='Mexico',
-                        tool_call_id='call_NiLmkD3Yi30ax2IY7t14e3AP',
+                        tool_call_id='call_SIttSeiOistt33Htj4oiHOOX',
                         timestamp=IsDatetime(),
                     )
                 ]
@@ -2094,21 +2090,21 @@ async def test_openai_json_schema_output_multiple(allow_model_requests: None, op
                 ),
                 model_name='gpt-4o-2024-08-06',
                 timestamp=IsDatetime(),
-                vendor_id='chatcmpl-BeCFiQtbjmFUzYbmXlkAEWbc0peoL',
+                vendor_id='chatcmpl-Bgg5vrxUtCDlvgMreoxYxPaKxANmd',
             ),
         ]
     )
 
 
 @pytest.mark.vcr()
-async def test_openai_manual_json_output(allow_model_requests: None, openai_api_key: str):
+async def test_openai_prompted_json_output(allow_model_requests: None, openai_api_key: str):
     m = OpenAIModel('gpt-4o', provider=OpenAIProvider(api_key=openai_api_key))
 
     class CityLocation(BaseModel):
         city: str
         country: str
 
-    agent = Agent(m, output_type=ManualJsonOutput(CityLocation))
+    agent = Agent(m, output_type=PromptedJsonOutput(CityLocation))
 
     @agent.tool_plain
     async def get_user_country() -> str:
@@ -2127,9 +2123,7 @@ async def test_openai_manual_json_output(allow_model_requests: None, openai_api_
                     )
                 ],
                 instructions="""\
-Always respond with a JSON object matching this description and schema:
-
-CityLocation
+Always respond with a JSON object that's compatible with this schema:
 
 {"properties": {"city": {"type": "string"}, "country": {"type": "string"}}, "required": ["city", "country"], "title": "CityLocation", "type": "object"}
 
@@ -2138,13 +2132,13 @@ Don't include any text or Markdown fencing before or after.\
             ),
             ModelResponse(
                 parts=[
-                    ToolCallPart(tool_name='get_user_country', args='{}', tool_call_id='call_uTjt2vMkeTr0GYqQyQYrUUhl')
+                    ToolCallPart(tool_name='get_user_country', args='{}', tool_call_id='call_s7oT9jaLAsEqTgvxZTmFh0wB')
                 ],
                 usage=Usage(
                     requests=1,
-                    request_tokens=106,
-                    response_tokens=12,
-                    total_tokens=118,
+                    request_tokens=109,
+                    response_tokens=11,
+                    total_tokens=120,
                     details={
                         'accepted_prediction_tokens': 0,
                         'audio_tokens': 0,
@@ -2155,21 +2149,19 @@ Don't include any text or Markdown fencing before or after.\
                 ),
                 model_name='gpt-4o-2024-08-06',
                 timestamp=IsDatetime(),
-                vendor_id='chatcmpl-BWmxcJf2wXM37xTze50IfAoyuaoKb',
+                vendor_id='chatcmpl-Bgh27PeOaFW6qmF04qC5uI2H9mviw',
             ),
             ModelRequest(
                 parts=[
                     ToolReturnPart(
                         tool_name='get_user_country',
                         content='Mexico',
-                        tool_call_id='call_uTjt2vMkeTr0GYqQyQYrUUhl',
+                        tool_call_id='call_s7oT9jaLAsEqTgvxZTmFh0wB',
                         timestamp=IsDatetime(),
                     )
                 ],
                 instructions="""\
-Always respond with a JSON object matching this description and schema:
-
-CityLocation
+Always respond with a JSON object that's compatible with this schema:
 
 {"properties": {"city": {"type": "string"}, "country": {"type": "string"}}, "required": ["city", "country"], "title": "CityLocation", "type": "object"}
 
@@ -2180,9 +2172,9 @@ Don't include any text or Markdown fencing before or after.\
                 parts=[TextPart(content='{"city":"Mexico City","country":"Mexico"}')],
                 usage=Usage(
                     requests=1,
-                    request_tokens=127,
-                    response_tokens=12,
-                    total_tokens=139,
+                    request_tokens=130,
+                    response_tokens=11,
+                    total_tokens=141,
                     details={
                         'accepted_prediction_tokens': 0,
                         'audio_tokens': 0,
@@ -2193,14 +2185,14 @@ Don't include any text or Markdown fencing before or after.\
                 ),
                 model_name='gpt-4o-2024-08-06',
                 timestamp=IsDatetime(),
-                vendor_id='chatcmpl-BWmxdIs5pO5RCbQ9qRxxtWVItB4NU',
+                vendor_id='chatcmpl-Bgh28advCSFhGHPnzUevVS6g6Uwg0',
             ),
         ]
     )
 
 
 @pytest.mark.vcr()
-async def test_openai_manual_json_output_multiple(allow_model_requests: None, openai_api_key: str):
+async def test_openai_prompted_json_output_multiple(allow_model_requests: None, openai_api_key: str):
     m = OpenAIModel('gpt-4o', provider=OpenAIProvider(api_key=openai_api_key))
 
     class CityLocation(BaseModel):
@@ -2211,14 +2203,11 @@ async def test_openai_manual_json_output_multiple(allow_model_requests: None, op
         country: str
         language: str
 
-    # TODO: Test with functions!
-    agent = Agent(m, output_type=ManualJsonOutput([CityLocation, CountryLanguage]))
+    agent = Agent(m, output_type=PromptedJsonOutput([CityLocation, CountryLanguage]))
 
     @agent.tool_plain
     async def get_user_country() -> str:
         return 'Mexico'
-
-    # TODO: Show what response_format looks like
 
     result = await agent.run('What is the largest city in the user country?')
     assert result.output == snapshot(CityLocation(city='Mexico City', country='Mexico'))
@@ -2233,9 +2222,7 @@ async def test_openai_manual_json_output_multiple(allow_model_requests: None, op
                     )
                 ],
                 instructions="""\
-Always respond with a JSON object matching this description and schema:
-
-final_result: The final response which ends this conversation
+Always respond with a JSON object that's compatible with this schema:
 
 {"type": "object", "properties": {"result": {"anyOf": [{"type": "object", "properties": {"kind": {"const": "CityLocation"}, "data": {"properties": {"city": {"type": "string"}, "country": {"type": "string"}}, "required": ["city", "country"], "title": "CityLocation", "type": "object"}}, "description": "CityLocation", "required": ["kind", "data"], "additionalProperties": false}, {"type": "object", "properties": {"kind": {"const": "CountryLanguage"}, "data": {"properties": {"country": {"type": "string"}, "language": {"type": "string"}}, "required": ["country", "language"], "title": "CountryLanguage", "type": "object"}}, "description": "CountryLanguage", "required": ["kind", "data"], "additionalProperties": false}]}}, "required": ["result"], "additionalProperties": false}
 
@@ -2244,13 +2231,13 @@ Don't include any text or Markdown fencing before or after.\
             ),
             ModelResponse(
                 parts=[
-                    ToolCallPart(tool_name='get_user_country', args='{}', tool_call_id='call_W3kwVF2ZX9cZ2L9NnbSDSs3V')
+                    ToolCallPart(tool_name='get_user_country', args='{}', tool_call_id='call_wJD14IyJ4KKVtjCrGyNCHO09')
                 ],
                 usage=Usage(
                     requests=1,
-                    request_tokens=284,
+                    request_tokens=273,
                     response_tokens=11,
-                    total_tokens=295,
+                    total_tokens=284,
                     details={
                         'accepted_prediction_tokens': 0,
                         'audio_tokens': 0,
@@ -2261,21 +2248,19 @@ Don't include any text or Markdown fencing before or after.\
                 ),
                 model_name='gpt-4o-2024-08-06',
                 timestamp=IsDatetime(),
-                vendor_id='chatcmpl-BeESepFYXE1ELAEvKlRNvsRzzYkOg',
+                vendor_id='chatcmpl-Bgh2AW2NXGgMc7iS639MJXNRgtatR',
             ),
             ModelRequest(
                 parts=[
                     ToolReturnPart(
                         tool_name='get_user_country',
                         content='Mexico',
-                        tool_call_id='call_W3kwVF2ZX9cZ2L9NnbSDSs3V',
+                        tool_call_id='call_wJD14IyJ4KKVtjCrGyNCHO09',
                         timestamp=IsDatetime(),
                     )
                 ],
                 instructions="""\
-Always respond with a JSON object matching this description and schema:
-
-final_result: The final response which ends this conversation
+Always respond with a JSON object that's compatible with this schema:
 
 {"type": "object", "properties": {"result": {"anyOf": [{"type": "object", "properties": {"kind": {"const": "CityLocation"}, "data": {"properties": {"city": {"type": "string"}, "country": {"type": "string"}}, "required": ["city", "country"], "title": "CityLocation", "type": "object"}}, "description": "CityLocation", "required": ["kind", "data"], "additionalProperties": false}, {"type": "object", "properties": {"kind": {"const": "CountryLanguage"}, "data": {"properties": {"country": {"type": "string"}, "language": {"type": "string"}}, "required": ["country", "language"], "title": "CountryLanguage", "type": "object"}}, "description": "CountryLanguage", "required": ["kind", "data"], "additionalProperties": false}]}}, "required": ["result"], "additionalProperties": false}
 
@@ -2290,9 +2275,9 @@ Don't include any text or Markdown fencing before or after.\
                 ],
                 usage=Usage(
                     requests=1,
-                    request_tokens=305,
+                    request_tokens=294,
                     response_tokens=21,
-                    total_tokens=326,
+                    total_tokens=315,
                     details={
                         'accepted_prediction_tokens': 0,
                         'audio_tokens': 0,
@@ -2303,7 +2288,7 @@ Don't include any text or Markdown fencing before or after.\
                 ),
                 model_name='gpt-4o-2024-08-06',
                 timestamp=IsDatetime(),
-                vendor_id='chatcmpl-BeESfsdYDCQwP7kGM4r5i8KXwllkT',
+                vendor_id='chatcmpl-Bgh2BthuopRnSqCuUgMbBnOqgkDHC',
             ),
         ]
     )

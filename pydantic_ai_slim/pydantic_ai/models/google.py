@@ -10,9 +10,10 @@ from uuid import uuid4
 
 from typing_extensions import assert_never
 
-from pydantic_ai.providers import Provider
+from pydantic_ai._output import OutputObjectDefinition
 
 from .. import UnexpectedModelBehavior, _utils, usage
+from ..exceptions import UserError
 from ..messages import (
     AudioUrl,
     BinaryContent,
@@ -32,6 +33,7 @@ from ..messages import (
     VideoUrl,
 )
 from ..profiles import ModelProfileSpec
+from ..providers import Provider
 from ..settings import ModelSettings
 from ..tools import ToolDefinition
 from . import (
@@ -213,9 +215,9 @@ class GoogleModel(Model):
     def _get_tool_config(
         self, model_request_parameters: ModelRequestParameters, tools: list[ToolDict] | None
     ) -> ToolConfigDict | None:
-        if model_request_parameters.output_mode != 'tool':
-            return None
-        elif tools:
+        if not tools:
+            return _tool_config([])  # pragma: no cover
+        elif model_request_parameters.output_mode == 'tool':
             names: list[str] = []
             for tool in tools:
                 for function_declaration in tool.get('function_declarations') or []:
@@ -223,7 +225,7 @@ class GoogleModel(Model):
                         names.append(name)
             return _tool_config(names)
         else:
-            return _tool_config([])  # pragma: no cover
+            return None
 
     @overload
     async def _generate_content(
@@ -251,6 +253,22 @@ class GoogleModel(Model):
         model_request_parameters: ModelRequestParameters,
     ) -> GenerateContentResponse | Awaitable[AsyncIterator[GenerateContentResponse]]:
         tools = self._get_tools(model_request_parameters)
+
+        output_mode = model_request_parameters.output_mode
+        response_mime_type = None
+        response_schema = None
+        if output_mode == 'json_schema':
+            response_mime_type = 'application/json'
+
+            output_object = model_request_parameters.output_object
+            assert output_object is not None
+            response_schema = self._map_response_schema(output_object)
+
+            if tools:
+                raise UserError('Google does not support JSON schema output and tools at the same time/')
+        elif output_mode == 'prompted_json' and not tools:
+            response_mime_type = 'application/json'
+
         tool_config = self._get_tool_config(model_request_parameters, tools)
         system_instruction, contents = await self._map_messages(messages)
 
@@ -268,6 +286,8 @@ class GoogleModel(Model):
             labels=model_settings.get('google_labels'),
             tools=cast(ToolListUnionDict, tools),
             tool_config=tool_config,
+            response_mime_type=response_mime_type,
+            response_schema=response_schema,
         )
 
         func = self.client.aio.models.generate_content_stream if stream else self.client.aio.models.generate_content
@@ -382,6 +402,15 @@ class GoogleModel(Model):
                 else:
                     assert_never(item)
         return content
+
+    def _map_response_schema(self, o: OutputObjectDefinition) -> dict[str, Any]:
+        response_schema = o.json_schema.copy()
+        if o.name:
+            response_schema['title'] = o.name
+        if o.description:
+            response_schema['description'] = o.description
+
+        return response_schema
 
 
 @dataclass

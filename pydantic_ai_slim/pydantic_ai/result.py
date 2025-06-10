@@ -12,19 +12,28 @@ from typing_extensions import TypeVar, assert_type, deprecated, overload
 from . import _utils, exceptions, messages as _messages, models
 from ._output import (
     JsonSchemaOutput,
-    ManualJsonOutput,
     OutputDataT,
     OutputDataT_inv,
     OutputSchema,
     OutputValidator,
     OutputValidatorFunc,
+    PromptedJsonOutput,
+    TextOutput,
     ToolOutput,
 )
 from .messages import AgentStreamEvent, FinalResultEvent
 from .tools import AgentDepsT, RunContext
 from .usage import Usage, UsageLimits
 
-__all__ = 'OutputDataT', 'OutputDataT_inv', 'ToolOutput', 'JsonSchemaOutput', 'ManualJsonOutput', 'OutputValidatorFunc'
+__all__ = (
+    'OutputDataT',
+    'OutputDataT_inv',
+    'ToolOutput',
+    'TextOutput',
+    'JsonSchemaOutput',
+    'PromptedJsonOutput',
+    'OutputValidatorFunc',
+)
 
 
 T = TypeVar('T')

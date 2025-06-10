@@ -15,7 +15,7 @@ class ModelProfile:
     json_schema_transformer: type[JsonSchemaTransformer] | None = None
     output_modes: set[Literal['tool', 'json_schema']] = field(default_factory=lambda: {'tool'})
     # TODO: Add docstrings
-    default_output_mode: Literal['tool', 'json_schema', 'manual_json'] = 'tool'
+    default_output_mode: Literal['tool', 'json_schema', 'prompted_json'] = 'tool'
 
     @classmethod
     def from_profile(cls, profile: ModelProfile | None) -> Self:

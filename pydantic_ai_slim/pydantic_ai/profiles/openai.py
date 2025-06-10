@@ -15,12 +15,20 @@ class OpenAIModelProfile(ModelProfile):
     ALL FIELDS MUST BE `openai_` PREFIXED SO YOU CAN MERGE THEM WITH OTHER MODELS.
     """
 
-    # This can be set by a provider or user if the OpenAI-"compatible" API doesn't support strict tool definitions
     openai_supports_strict_tool_definition: bool = True
+    """This can be set by a provider or user if the OpenAI-"compatible" API doesn't support strict tool definitions."""
+
+    openai_supports_json_object_response_format: bool = True
+    """This can be set by a provider or user if the OpenAI-"compatible" API doesn't support the `json_object` `response_format`.
+    Note that if a model does not support the `json_schema` `response_format`, that value should be removed from `ModelProfile.output_modes`.
+    """
 
 
 def openai_model_profile(model_name: str) -> ModelProfile:
     """Get the model profile for an OpenAI model."""
+    # json_schema is only supported with the gpt-4o-mini, gpt-4o-mini-2024-07-18, and gpt-4o-2024-08-06 model snapshots and later,
+    # but we leave it in here for all models because the `default_output_mode` is `'tool'`, so `json_schema` is only used
+    # when the user specifically uses the JsonSchemaOutput marker, so an error from the API is acceptable.
     return OpenAIModelProfile(json_schema_transformer=OpenAIJsonSchemaTransformer, output_modes={'tool', 'json_schema'})
 
 

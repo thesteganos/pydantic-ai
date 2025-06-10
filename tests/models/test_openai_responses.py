@@ -3,6 +3,7 @@ from dataclasses import replace
 
 import pytest
 from inline_snapshot import snapshot
+from pydantic import BaseModel
 from typing_extensions import TypedDict
 
 from pydantic_ai.agent import Agent
@@ -20,6 +21,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.profiles.openai import openai_model_profile
+from pydantic_ai.result import JsonSchemaOutput, PromptedJsonOutput, TextOutput, ToolOutput
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.usage import Usage
 
@@ -505,3 +507,335 @@ def test_model_profile_strict_not_supported():
             'strict': False,
         }
     )
+
+
+@pytest.mark.vcr()
+async def test_tool_output(allow_model_requests: None, openai_api_key: str):
+    m = OpenAIResponsesModel('gpt-4o', provider=OpenAIProvider(api_key=openai_api_key))
+
+    class CityLocation(BaseModel):
+        city: str
+        country: str
+
+    agent = Agent(m, output_type=ToolOutput(CityLocation))
+
+    @agent.tool_plain
+    async def get_user_country() -> str:
+        return 'Mexico'
+
+    result = await agent.run('What is the largest city in the user country?')
+    assert result.output == snapshot(CityLocation(city='Mexico City', country='Mexico'))
+
+    assert result.all_messages() == snapshot(
+        [
+            ModelRequest(
+                parts=[
+                    UserPromptPart(
+                        content='What is the largest city in the user country?',
+                        timestamp=IsDatetime(),
+                    )
+                ]
+            ),
+            ModelResponse(
+                parts=[
+                    TextPart(content=''),
+                    ToolCallPart(tool_name='get_user_country', args='{}', tool_call_id='call_ZWkVhdUjupo528U9dqgFeRkH'),
+                ],
+                usage=Usage(
+                    request_tokens=62,
+                    response_tokens=12,
+                    total_tokens=74,
+                    details={'reasoning_tokens': 0, 'cached_tokens': 0},
+                ),
+                model_name='gpt-4o-2024-08-06',
+                timestamp=IsDatetime(),
+            ),
+            ModelRequest(
+                parts=[
+                    ToolReturnPart(
+                        tool_name='get_user_country',
+                        content='Mexico',
+                        tool_call_id='call_ZWkVhdUjupo528U9dqgFeRkH',
+                        timestamp=IsDatetime(),
+                    )
+                ]
+            ),
+            ModelResponse(
+                parts=[
+                    TextPart(content=''),
+                    ToolCallPart(
+                        tool_name='final_result',
+                        args='{"city":"Mexico City","country":"Mexico"}',
+                        tool_call_id='call_iFBd0zULhSZRR908DfH73VwN',
+                    ),
+                ],
+                usage=Usage(
+                    request_tokens=85,
+                    response_tokens=20,
+                    total_tokens=105,
+                    details={'reasoning_tokens': 0, 'cached_tokens': 0},
+                ),
+                model_name='gpt-4o-2024-08-06',
+                timestamp=IsDatetime(),
+            ),
+            ModelRequest(
+                parts=[
+                    ToolReturnPart(
+                        tool_name='final_result',
+                        content='Final result processed.',
+                        tool_call_id='call_iFBd0zULhSZRR908DfH73VwN',
+                        timestamp=IsDatetime(),
+                    )
+                ]
+            ),
+        ]
+    )
+
+
+@pytest.mark.vcr()
+async def test_text_output_function(allow_model_requests: None, openai_api_key: str):
+    m = OpenAIResponsesModel('gpt-4o', provider=OpenAIProvider(api_key=openai_api_key))
+
+    def upcase(text: str) -> str:
+        return text.upper()
+
+    agent = Agent(m, output_type=TextOutput(upcase))
+
+    @agent.tool_plain
+    async def get_user_country() -> str:
+        return 'Mexico'
+
+    result = await agent.run('What is the largest city in the user country?')
+    assert result.output == snapshot('THE LARGEST CITY IN MEXICO IS MEXICO CITY.')
+
+    assert result.all_messages() == snapshot(
+        [
+            ModelRequest(
+                parts=[
+                    UserPromptPart(
+                        content='What is the largest city in the user country?',
+                        timestamp=IsDatetime(),
+                    )
+                ]
+            ),
+            ModelResponse(
+                parts=[
+                    TextPart(content=''),
+                    ToolCallPart(tool_name='get_user_country', args='{}', tool_call_id='call_aTJhYjzmixZaVGqwl5gn2Ncr'),
+                ],
+                usage=Usage(
+                    request_tokens=36,
+                    response_tokens=12,
+                    total_tokens=48,
+                    details={'reasoning_tokens': 0, 'cached_tokens': 0},
+                ),
+                model_name='gpt-4o-2024-08-06',
+                timestamp=IsDatetime(),
+            ),
+            ModelRequest(
+                parts=[
+                    ToolReturnPart(
+                        tool_name='get_user_country',
+                        content='Mexico',
+                        tool_call_id='call_aTJhYjzmixZaVGqwl5gn2Ncr',
+                        timestamp=IsDatetime(),
+                    )
+                ]
+            ),
+            ModelResponse(
+                parts=[TextPart(content='The largest city in Mexico is Mexico City.')],
+                usage=Usage(
+                    request_tokens=59,
+                    response_tokens=11,
+                    total_tokens=70,
+                    details={'reasoning_tokens': 0, 'cached_tokens': 0},
+                ),
+                model_name='gpt-4o-2024-08-06',
+                timestamp=IsDatetime(),
+            ),
+        ]
+    )
+
+
+@pytest.mark.vcr()
+async def test_json_schema_output(allow_model_requests: None, openai_api_key: str):
+    m = OpenAIResponsesModel('gpt-4o', provider=OpenAIProvider(api_key=openai_api_key))
+
+    class CityLocation(BaseModel):
+        city: str
+        country: str
+
+    agent = Agent(m, output_type=JsonSchemaOutput(CityLocation))
+
+    @agent.tool_plain
+    async def get_user_country() -> str:
+        return 'Mexico'
+
+    result = await agent.run('What is the largest city in the user country?')
+    assert result.output == snapshot(CityLocation(city='Mexico City', country='Mexico'))
+
+    assert result.all_messages() == snapshot(
+        [
+            ModelRequest(
+                parts=[
+                    UserPromptPart(
+                        content='What is the largest city in the user country?',
+                        timestamp=IsDatetime(),
+                    )
+                ]
+            ),
+            ModelResponse(
+                parts=[
+                    TextPart(content=''),
+                    ToolCallPart(tool_name='get_user_country', args='{}', tool_call_id='call_tTAThu8l2S9hNky2krdwijGP'),
+                ],
+                usage=Usage(
+                    request_tokens=66,
+                    response_tokens=12,
+                    total_tokens=78,
+                    details={'reasoning_tokens': 0, 'cached_tokens': 0},
+                ),
+                model_name='gpt-4o-2024-08-06',
+                timestamp=IsDatetime(),
+            ),
+            ModelRequest(
+                parts=[
+                    ToolReturnPart(
+                        tool_name='get_user_country',
+                        content='Mexico',
+                        tool_call_id='call_tTAThu8l2S9hNky2krdwijGP',
+                        timestamp=IsDatetime(),
+                    )
+                ]
+            ),
+            ModelResponse(
+                parts=[TextPart(content='{"city":"Mexico City","country":"Mexico"}')],
+                usage=Usage(
+                    request_tokens=89,
+                    response_tokens=16,
+                    total_tokens=105,
+                    details={'reasoning_tokens': 0, 'cached_tokens': 0},
+                ),
+                model_name='gpt-4o-2024-08-06',
+                timestamp=IsDatetime(),
+            ),
+        ]
+    )
+
+
+@pytest.mark.vcr()
+async def test_json_schema_output_multiple(allow_model_requests: None, openai_api_key: str):
+    m = OpenAIResponsesModel('gpt-4o', provider=OpenAIProvider(api_key=openai_api_key))
+
+    class CityLocation(BaseModel):
+        city: str
+        country: str
+
+    class CountryLanguage(BaseModel):
+        country: str
+        language: str
+
+    agent = Agent(m, output_type=JsonSchemaOutput([CityLocation, CountryLanguage]))
+
+    @agent.tool_plain
+    async def get_user_country() -> str:
+        return 'Mexico'
+
+    result = await agent.run('What is the largest city in the user country?')
+    assert result.output == snapshot(CityLocation(city='Mexico City', country='Mexico'))
+
+    assert result.all_messages() == snapshot(
+        [
+            ModelRequest(
+                parts=[
+                    UserPromptPart(
+                        content='What is the largest city in the user country?',
+                        timestamp=IsDatetime(),
+                    )
+                ]
+            ),
+            ModelResponse(
+                parts=[
+                    TextPart(content=''),
+                    ToolCallPart(tool_name='get_user_country', args='{}', tool_call_id='call_UaLahjOtaM2tTyYZLxTCbOaP'),
+                ],
+                usage=Usage(
+                    request_tokens=153,
+                    response_tokens=12,
+                    total_tokens=165,
+                    details={'reasoning_tokens': 0, 'cached_tokens': 0},
+                ),
+                model_name='gpt-4o-2024-08-06',
+                timestamp=IsDatetime(),
+            ),
+            ModelRequest(
+                parts=[
+                    ToolReturnPart(
+                        tool_name='get_user_country',
+                        content='Mexico',
+                        tool_call_id='call_UaLahjOtaM2tTyYZLxTCbOaP',
+                        timestamp=IsDatetime(),
+                    )
+                ]
+            ),
+            ModelResponse(
+                parts=[
+                    TextPart(
+                        content='{"result":{"kind":"CityLocation","data":{"city":"Mexico City","country":"Mexico"}}}'
+                    )
+                ],
+                usage=Usage(
+                    request_tokens=176,
+                    response_tokens=26,
+                    total_tokens=202,
+                    details={'reasoning_tokens': 0, 'cached_tokens': 0},
+                ),
+                model_name='gpt-4o-2024-08-06',
+                timestamp=IsDatetime(),
+            ),
+        ]
+    )
+
+
+@pytest.mark.vcr()
+async def test_prompted_json_output(allow_model_requests: None, openai_api_key: str):
+    m = OpenAIResponsesModel('gpt-4o', provider=OpenAIProvider(api_key=openai_api_key))
+
+    class CityLocation(BaseModel):
+        city: str
+        country: str
+
+    agent = Agent(m, output_type=PromptedJsonOutput(CityLocation))
+
+    @agent.tool_plain
+    async def get_user_country() -> str:
+        return 'Mexico'
+
+    result = await agent.run('What is the largest city in the user country?')
+    assert result.output == snapshot(CityLocation(city='Mexico City', country='Mexico'))
+
+    assert result.all_messages() == snapshot()
+
+
+@pytest.mark.vcr()
+async def test_prompted_json_output_multiple(allow_model_requests: None, openai_api_key: str):
+    m = OpenAIResponsesModel('gpt-4o', provider=OpenAIProvider(api_key=openai_api_key))
+
+    class CityLocation(BaseModel):
+        city: str
+        country: str
+
+    class CountryLanguage(BaseModel):
+        country: str
+        language: str
+
+    agent = Agent(m, output_type=PromptedJsonOutput([CityLocation, CountryLanguage]))
+
+    @agent.tool_plain
+    async def get_user_country() -> str:
+        return 'Mexico'
+
+    result = await agent.run('What is the largest city in the user country?')
+    assert result.output == snapshot(CityLocation(city='Mexico City', country='Mexico'))
+
+    assert result.all_messages() == snapshot()

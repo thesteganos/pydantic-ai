@@ -14,7 +14,7 @@ from pydantic_ai.profiles.openai import OpenAIModelProfile
 from pydantic_ai.providers import Provider, infer_provider
 
 from .. import ModelHTTPError, UnexpectedModelBehavior, _utils, usage
-from .._output import OutputObjectDefinition
+from .._output import DEFAULT_OUTPUT_TOOL_NAME, OutputObjectDefinition
 from .._utils import guard_tool_call_id as _guard_tool_call_id, number_to_datetime
 from ..messages import (
     AudioUrl,
@@ -263,25 +263,29 @@ class OpenAIModel(Model):
         model_settings: OpenAIModelSettings,
         model_request_parameters: ModelRequestParameters,
     ) -> chat.ChatCompletion | AsyncStream[ChatCompletionChunk]:
-        openai_messages = await self._map_messages(messages)
-
-        tools = [self._map_tool_definition(r) for r in model_request_parameters.function_tools]
-        response_format: chat.completion_create_params.ResponseFormat | None = None
-
-        output_mode = model_request_parameters.output_mode
-        if output_mode == 'tool':
-            tools.extend(self._map_tool_definition(r) for r in model_request_parameters.output_tools)
-        elif output_mode == 'json_schema':
-            output_object = model_request_parameters.output_object
-            assert output_object is not None
-            response_format = self._map_output_object_definition(output_object)
-
+        tools = self._get_tools(model_request_parameters)
         if not tools:
             tool_choice: Literal['none', 'required', 'auto'] | None = None
         elif model_request_parameters.output_mode == 'tool':
             tool_choice = 'required'
         else:
             tool_choice = 'auto'
+
+        openai_messages = await self._map_messages(messages)
+
+        tools = [self._map_tool_definition(r) for r in model_request_parameters.function_tools]
+        response_format: chat.completion_create_params.ResponseFormat | None = None
+
+        output_mode = model_request_parameters.output_mode
+        if output_mode == 'json_schema':
+            output_object = model_request_parameters.output_object
+            assert output_object is not None
+            response_format = self._map_json_schema(output_object)
+        elif (
+            output_mode == 'prompted_json'
+            and OpenAIModelProfile.from_profile(self.profile).openai_supports_json_object_response_format
+        ):
+            response_format = {'type': 'json_object'}
 
         try:
             extra_headers = model_settings.get('extra_headers', {})
@@ -417,12 +421,11 @@ class OpenAIModel(Model):
         )
 
     @staticmethod
-    def _map_output_object_definition(o: OutputObjectDefinition) -> chat.completion_create_params.ResponseFormat:
-        # TODO: Use ResponseFormatJSONObject on older models
+    def _map_json_schema(o: OutputObjectDefinition) -> chat.completion_create_params.ResponseFormat:
         response_format_param: chat.completion_create_params.ResponseFormatJSONSchema = {  # pyright: ignore[reportPrivateImportUsage]
             'type': 'json_schema',
             'json_schema': {
-                'name': o.name,
+                'name': o.name or DEFAULT_OUTPUT_TOOL_NAME,
                 'schema': o.json_schema,
             },
         }
@@ -671,7 +674,6 @@ class OpenAIResponsesModel(Model):
         tools = self._get_tools(model_request_parameters)
         tools = list(model_settings.get('openai_builtin_tools', [])) + tools
 
-        # standalone function to make it easier to override
         if not tools:
             tool_choice: Literal['none', 'required', 'auto'] | None = None
         elif model_request_parameters.output_mode == 'tool':
@@ -682,11 +684,21 @@ class OpenAIResponsesModel(Model):
         instructions, openai_messages = await self._map_messages(messages)
         reasoning = self._get_reasoning(model_settings)
 
+        text: responses.ResponseTextConfigParam | None = None
+        output_mode = model_request_parameters.output_mode
+        if output_mode == 'json_schema':
+            output_object = model_request_parameters.output_object
+            assert output_object is not None
+            text = {'format': self._map_json_schema(output_object)}
+        elif (
+            output_mode == 'prompted_json'
+            and OpenAIModelProfile.from_profile(self.profile).openai_supports_json_object_response_format
+        ):
+            text = {'format': {'type': 'json_object'}}
+
         try:
             extra_headers = model_settings.get('extra_headers', {})
             extra_headers.setdefault('User-Agent', get_user_agent())
-            # TODO: Pass text.format = ResponseFormatTextJSONSchemaConfigParam(...): {'type': 'json_schema', 'strict': True, 'name': '...', 'schema': ...}
-            # TODO: Fall back on ResponseFormatJSONObject/json_object on older models?
             return await self.client.responses.create(
                 input=openai_messages,
                 model=self._model_name,
@@ -702,6 +714,7 @@ class OpenAIResponsesModel(Model):
                 timeout=model_settings.get('timeout', NOT_GIVEN),
                 reasoning=reasoning,
                 user=model_settings.get('openai_user', NOT_GIVEN),
+                text=text or NOT_GIVEN,
                 extra_headers=extra_headers,
                 extra_body=model_settings.get('extra_body'),
             )
@@ -792,6 +805,19 @@ class OpenAIResponsesModel(Model):
             name=t.tool_name,
             type='function_call',
         )
+
+    @staticmethod
+    def _map_json_schema(o: OutputObjectDefinition) -> responses.ResponseFormatTextJSONSchemaConfigParam:
+        response_format_param: responses.ResponseFormatTextJSONSchemaConfigParam = {
+            'type': 'json_schema',
+            'name': o.name or DEFAULT_OUTPUT_TOOL_NAME,
+            'schema': o.json_schema,
+        }
+        if o.description:
+            response_format_param['description'] = o.description
+        if o.strict:
+            response_format_param['strict'] = o.strict
+        return response_format_param
 
     @staticmethod
     async def _map_user_prompt(part: UserPromptPart) -> responses.EasyInputMessageParam:
