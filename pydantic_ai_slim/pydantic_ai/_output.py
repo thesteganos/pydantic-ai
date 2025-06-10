@@ -219,8 +219,8 @@ OutputType = TypeAliasType(
 TextOutputFunction = TypeAliasType(
     'TextOutputFunction',
     Union[
-        Callable[[RunContext, str], Awaitable[T_co] | T_co],
-        Callable[[str], Awaitable[T_co] | T_co],
+        Callable[[RunContext, str], Union[Awaitable[T_co], T_co]],
+        Callable[[str], Union[Awaitable[T_co], T_co]],
     ],
     type_params=(T_co,),
 )
