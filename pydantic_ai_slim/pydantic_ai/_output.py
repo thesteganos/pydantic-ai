@@ -613,7 +613,7 @@ class OutputObjectSchema(Generic[OutputDataT]):
                 description = f'{description}. {json_schema_description}'
 
         self.object_def = OutputObjectDefinition(
-            name=name or getattr(output_type, '__name__'),
+            name=name or getattr(output_type, '__name__', None),
             description=description,
             json_schema=json_schema,
             strict=strict,

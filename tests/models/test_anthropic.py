@@ -11,6 +11,7 @@ from typing import Any, Callable, TypeVar, Union, cast
 import httpx
 import pytest
 from inline_snapshot import snapshot
+from pydantic import BaseModel
 
 from pydantic_ai import Agent, ModelHTTPError, ModelRetry
 from pydantic_ai.messages import (
@@ -26,7 +27,7 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
-from pydantic_ai.result import Usage
+from pydantic_ai.result import PromptedJsonOutput, TextOutput, ToolOutput, Usage
 from pydantic_ai.settings import ModelSettings
 
 from ..conftest import IsDatetime, IsNow, IsStr, TestEnv, raise_if_exception, try_import
@@ -1063,3 +1064,349 @@ I can't physically give you a potato since I'm a computer program. However, I ca
 
 What specifically would you like to know about potatoes?\
 """)
+
+
+@pytest.mark.vcr()
+async def test_anthropic_tool_output(allow_model_requests: None, anthropic_api_key: str):
+    m = AnthropicModel('claude-3-5-sonnet-latest', provider=AnthropicProvider(api_key=anthropic_api_key))
+
+    class CityLocation(BaseModel):
+        city: str
+        country: str
+
+    agent = Agent(m, output_type=ToolOutput(CityLocation))
+
+    @agent.tool_plain
+    async def get_user_country() -> str:
+        return 'Mexico'
+
+    result = await agent.run('What is the largest city in the user country?')
+    assert result.output == snapshot(CityLocation(city='Mexico City', country='Mexico'))
+
+    assert result.all_messages() == snapshot(
+        [
+            ModelRequest(
+                parts=[
+                    UserPromptPart(
+                        content='What is the largest city in the user country?',
+                        timestamp=IsDatetime(),
+                    )
+                ]
+            ),
+            ModelResponse(
+                parts=[
+                    ToolCallPart(tool_name='get_user_country', args={}, tool_call_id='toolu_019pMboNVRg5jkw4PKkofQ6Y')
+                ],
+                usage=Usage(
+                    requests=1,
+                    request_tokens=445,
+                    response_tokens=23,
+                    total_tokens=468,
+                    details={
+                        'cache_creation_input_tokens': 0,
+                        'cache_read_input_tokens': 0,
+                        'input_tokens': 445,
+                        'output_tokens': 23,
+                    },
+                ),
+                model_name='claude-3-5-sonnet-20241022',
+                timestamp=IsDatetime(),
+                vendor_id='msg_01EnfsDTixCmHjqvk9QarBj4',
+            ),
+            ModelRequest(
+                parts=[
+                    ToolReturnPart(
+                        tool_name='get_user_country',
+                        content='Mexico',
+                        tool_call_id='toolu_019pMboNVRg5jkw4PKkofQ6Y',
+                        timestamp=IsDatetime(),
+                    )
+                ]
+            ),
+            ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        tool_name='final_result',
+                        args={'city': 'Mexico City', 'country': 'Mexico'},
+                        tool_call_id='toolu_01V4d2H4EWp5LDM2aXaeyR6W',
+                    )
+                ],
+                usage=Usage(
+                    requests=1,
+                    request_tokens=497,
+                    response_tokens=56,
+                    total_tokens=553,
+                    details={
+                        'cache_creation_input_tokens': 0,
+                        'cache_read_input_tokens': 0,
+                        'input_tokens': 497,
+                        'output_tokens': 56,
+                    },
+                ),
+                model_name='claude-3-5-sonnet-20241022',
+                timestamp=IsDatetime(),
+                vendor_id='msg_01Hbm5BtKzfVtWs8Eb7rCNNx',
+            ),
+            ModelRequest(
+                parts=[
+                    ToolReturnPart(
+                        tool_name='final_result',
+                        content='Final result processed.',
+                        tool_call_id='toolu_01V4d2H4EWp5LDM2aXaeyR6W',
+                        timestamp=IsDatetime(),
+                    )
+                ]
+            ),
+        ]
+    )
+
+
+async def test_anthropic_text_output_function(allow_model_requests: None, anthropic_api_key: str):
+    m = AnthropicModel('claude-3-5-sonnet-latest', provider=AnthropicProvider(api_key=anthropic_api_key))
+
+    def upcase(text: str) -> str:
+        return text.upper()
+
+    agent = Agent(m, output_type=TextOutput(upcase))
+
+    @agent.tool_plain
+    async def get_user_country() -> str:
+        return 'Mexico'
+
+    result = await agent.run(
+        'What is the largest city in the user country? Use the get_user_country tool and then your own world knowledge.'
+    )
+    assert result.output == snapshot("""\
+BASED ON THE RESULT, YOU ARE LOCATED IN MEXICO. \n\
+
+MEXICO CITY (CIUDAD DE MÉXICO) IS THE LARGEST CITY IN MEXICO, WITH A METROPOLITAN AREA POPULATION OF OVER 22 MILLION PEOPLE (2022 ESTIMATES). IT IS NOT ONLY THE LARGEST CITY IN MEXICO BUT ALSO ONE OF THE LARGEST METROPOLITAN AREAS IN THE WORLD. THE CITY PROPER HAS AROUND 9 MILLION INHABITANTS, WHILE THE GREATER METROPOLITAN AREA INCLUDES MANY SURROUNDING MUNICIPALITIES AND EXTENDS INTO THE STATE OF MEXICO.
+
+MEXICO CITY SERVES AS THE COUNTRY'S CAPITAL AND ITS MOST IMPORTANT POLITICAL, ECONOMIC, AND CULTURAL CENTER. IT'S LOCATED IN THE VALLEY OF MEXICO IN THE CENTRAL PART OF THE COUNTRY.\
+""")
+
+    assert result.all_messages() == snapshot(
+        [
+            ModelRequest(
+                parts=[
+                    UserPromptPart(
+                        content='What is the largest city in the user country? Use the get_user_country tool and then your own world knowledge.',
+                        timestamp=IsDatetime(),
+                    )
+                ]
+            ),
+            ModelResponse(
+                parts=[
+                    TextPart(
+                        content="I'll help you find the largest city in your country. Let me first check your country using the get_user_country tool."
+                    ),
+                    ToolCallPart(tool_name='get_user_country', args={}, tool_call_id='toolu_01NtJsHFTSiiBoKpnzGBsg5C'),
+                ],
+                usage=Usage(
+                    requests=1,
+                    request_tokens=383,
+                    response_tokens=66,
+                    total_tokens=449,
+                    details={
+                        'cache_creation_input_tokens': 0,
+                        'cache_read_input_tokens': 0,
+                        'input_tokens': 383,
+                        'output_tokens': 66,
+                    },
+                ),
+                model_name='claude-3-5-sonnet-20241022',
+                timestamp=IsDatetime(),
+                vendor_id='msg_01YJQ6kNbtvNpwJboZ9peSEq',
+            ),
+            ModelRequest(
+                parts=[
+                    ToolReturnPart(
+                        tool_name='get_user_country',
+                        content='Mexico',
+                        tool_call_id='toolu_01NtJsHFTSiiBoKpnzGBsg5C',
+                        timestamp=IsDatetime(),
+                    )
+                ]
+            ),
+            ModelResponse(
+                parts=[
+                    TextPart(
+                        content="""\
+Based on the result, you are located in Mexico. \n\
+
+Mexico City (Ciudad de México) is the largest city in Mexico, with a metropolitan area population of over 22 million people (2022 estimates). It is not only the largest city in Mexico but also one of the largest metropolitan areas in the world. The city proper has around 9 million inhabitants, while the greater metropolitan area includes many surrounding municipalities and extends into the State of Mexico.
+
+Mexico City serves as the country's capital and its most important political, economic, and cultural center. It's located in the Valley of Mexico in the central part of the country.\
+"""
+                    )
+                ],
+                usage=Usage(
+                    requests=1,
+                    request_tokens=461,
+                    response_tokens=135,
+                    total_tokens=596,
+                    details={
+                        'cache_creation_input_tokens': 0,
+                        'cache_read_input_tokens': 0,
+                        'input_tokens': 461,
+                        'output_tokens': 135,
+                    },
+                ),
+                model_name='claude-3-5-sonnet-20241022',
+                timestamp=IsDatetime(),
+                vendor_id='msg_013YNHomHSuhmzWZq8iWjvjK',
+            ),
+        ]
+    )
+
+
+async def test_anthropic_prompted_json_output(allow_model_requests: None, anthropic_api_key: str):
+    m = AnthropicModel('claude-3-5-sonnet-latest', provider=AnthropicProvider(api_key=anthropic_api_key))
+
+    class CityLocation(BaseModel):
+        city: str
+        country: str
+
+    agent = Agent(m, output_type=PromptedJsonOutput(CityLocation))
+
+    @agent.tool_plain
+    async def get_user_country() -> str:
+        return 'Mexico'
+
+    result = await agent.run(
+        'What is the largest city in the user country? Use the get_user_country tool and then your own world knowledge.'
+    )
+    assert result.output == snapshot(CityLocation(city='Mexico City', country='Mexico'))
+
+    assert result.all_messages() == snapshot(
+        [
+            ModelRequest(
+                parts=[
+                    UserPromptPart(
+                        content='What is the largest city in the user country? Use the get_user_country tool and then your own world knowledge.',
+                        timestamp=IsDatetime(),
+                    )
+                ],
+                instructions="""\
+Always respond with a JSON object that's compatible with this schema:
+
+{"properties": {"city": {"type": "string"}, "country": {"type": "string"}}, "required": ["city", "country"], "title": "CityLocation", "type": "object"}
+
+Don't include any text or Markdown fencing before or after.\
+""",
+            ),
+            ModelResponse(
+                parts=[
+                    ToolCallPart(tool_name='get_user_country', args={}, tool_call_id='toolu_01FdQREaVXQbaH7JrFQaTzKb')
+                ],
+                usage=Usage(
+                    requests=1,
+                    request_tokens=459,
+                    response_tokens=38,
+                    total_tokens=497,
+                    details={
+                        'cache_creation_input_tokens': 0,
+                        'cache_read_input_tokens': 0,
+                        'input_tokens': 459,
+                        'output_tokens': 38,
+                    },
+                ),
+                model_name='claude-3-5-sonnet-20241022',
+                timestamp=IsDatetime(),
+                vendor_id='msg_01FjTTxFKgUXP2cp5s3d7fYh',
+            ),
+            ModelRequest(
+                parts=[
+                    ToolReturnPart(
+                        tool_name='get_user_country',
+                        content='Mexico',
+                        tool_call_id='toolu_01FdQREaVXQbaH7JrFQaTzKb',
+                        timestamp=IsDatetime(),
+                    )
+                ],
+                instructions="""\
+Always respond with a JSON object that's compatible with this schema:
+
+{"properties": {"city": {"type": "string"}, "country": {"type": "string"}}, "required": ["city", "country"], "title": "CityLocation", "type": "object"}
+
+Don't include any text or Markdown fencing before or after.\
+""",
+            ),
+            ModelResponse(
+                parts=[TextPart(content='{"city": "Mexico City", "country": "Mexico"}')],
+                usage=Usage(
+                    requests=1,
+                    request_tokens=510,
+                    response_tokens=17,
+                    total_tokens=527,
+                    details={
+                        'cache_creation_input_tokens': 0,
+                        'cache_read_input_tokens': 0,
+                        'input_tokens': 510,
+                        'output_tokens': 17,
+                    },
+                ),
+                model_name='claude-3-5-sonnet-20241022',
+                timestamp=IsDatetime(),
+                vendor_id='msg_01HrNfqrq9UGB54S5xhbCWY5',
+            ),
+        ]
+    )
+
+
+async def test_anthropic_prompted_json_output_multiple(allow_model_requests: None, anthropic_api_key: str):
+    m = AnthropicModel('claude-3-5-sonnet-latest', provider=AnthropicProvider(api_key=anthropic_api_key))
+
+    class CityLocation(BaseModel):
+        city: str
+        country: str
+
+    class CountryLanguage(BaseModel):
+        country: str
+        language: str
+
+    agent = Agent(m, output_type=PromptedJsonOutput([CityLocation, CountryLanguage]))
+
+    result = await agent.run('What is the largest city in Mexico?')
+    assert result.output == snapshot(CityLocation(city='Mexico City', country='Mexico'))
+
+    assert result.all_messages() == snapshot(
+        [
+            ModelRequest(
+                parts=[
+                    UserPromptPart(
+                        content='What is the largest city in Mexico?',
+                        timestamp=IsDatetime(),
+                    )
+                ],
+                instructions="""\
+Always respond with a JSON object that's compatible with this schema:
+
+{"type": "object", "properties": {"result": {"anyOf": [{"type": "object", "properties": {"kind": {"type": "string", "const": "CityLocation"}, "data": {"properties": {"city": {"type": "string"}, "country": {"type": "string"}}, "required": ["city", "country"], "title": "CityLocation", "type": "object"}}, "description": "CityLocation", "required": ["kind", "data"], "additionalProperties": false}, {"type": "object", "properties": {"kind": {"type": "string", "const": "CountryLanguage"}, "data": {"properties": {"country": {"type": "string"}, "language": {"type": "string"}}, "required": ["country", "language"], "title": "CountryLanguage", "type": "object"}}, "description": "CountryLanguage", "required": ["kind", "data"], "additionalProperties": false}]}}, "required": ["result"], "additionalProperties": false}
+
+Don't include any text or Markdown fencing before or after.\
+""",
+            ),
+            ModelResponse(
+                parts=[
+                    TextPart(
+                        content='{"result": {"kind": "CityLocation", "data": {"city": "Mexico City", "country": "Mexico"}}}'
+                    )
+                ],
+                usage=Usage(
+                    requests=1,
+                    request_tokens=281,
+                    response_tokens=31,
+                    total_tokens=312,
+                    details={
+                        'cache_creation_input_tokens': 0,
+                        'cache_read_input_tokens': 0,
+                        'input_tokens': 281,
+                        'output_tokens': 31,
+                    },
+                ),
+                model_name='claude-3-5-sonnet-20241022',
+                timestamp=IsDatetime(),
+                vendor_id='msg_01HyWKS3uRkhUw5mWKJY2iZN',
+            ),
+        ]
+    )

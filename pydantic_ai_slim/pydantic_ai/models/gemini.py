@@ -195,11 +195,11 @@ class GeminiModel(Model):
         self, model_request_parameters: ModelRequestParameters, tools: _GeminiTools | None
     ) -> _GeminiToolConfig | None:
         if not tools:
-            return _tool_config([])  # pragma: no cover
+            return None
         elif model_request_parameters.output_mode == 'tool':
             return _tool_config([t['name'] for t in tools['function_declarations']])
         else:
-            return None
+            return _tool_config([])  # pragma: no cover
 
     @asynccontextmanager
     async def _make_request(
@@ -221,20 +221,21 @@ class GeminiModel(Model):
         if tool_config is not None:
             request_data['toolConfig'] = tool_config
 
+        generation_config = _settings_to_generation_config(model_settings)
+
         output_mode = model_request_parameters.output_mode
         if output_mode == 'json_schema':
-            request_data['responseMimeType'] = 'application/json'
+            generation_config['response_mime_type'] = 'application/json'
 
             output_object = model_request_parameters.output_object
             assert output_object is not None
-            request_data['responseSchema'] = self._map_response_schema(output_object)
+            generation_config['response_schema'] = self._map_response_schema(output_object)
 
             if tools:
                 raise UserError('Google does not support JSON schema output and tools at the same time.')
         elif output_mode == 'prompted_json' and not tools:
-            request_data['responseMimeType'] = 'application/json'
+            generation_config['response_mime_type'] = 'application/json'
 
-        generation_config = _settings_to_generation_config(model_settings)
         if generation_config:
             request_data['generationConfig'] = generation_config
 
@@ -528,9 +529,6 @@ class _GeminiRequest(TypedDict):
     generationConfig: NotRequired[_GeminiGenerationConfig]
     labels: NotRequired[dict[str, str]]
 
-    responseMimeType: NotRequired[str]
-    responseSchema: NotRequired[dict[str, Any]]
-
 
 class GeminiSafetySettings(TypedDict):
     """Safety settings options for Gemini model request.
@@ -589,6 +587,8 @@ class _GeminiGenerationConfig(TypedDict, total=False):
     frequency_penalty: float
     stop_sequences: list[str]
     thinking_config: ThinkingConfig
+    response_mime_type: str
+    response_schema: dict[str, Any]
 
 
 class _GeminiContent(TypedDict):

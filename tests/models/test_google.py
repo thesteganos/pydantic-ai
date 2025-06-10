@@ -1013,11 +1013,6 @@ Don't include any text or Markdown fencing before or after.\
 
 
 async def test_google_prompted_json_output_multiple(allow_model_requests: None, google_provider: GoogleProvider):
-    import logfire
-
-    logfire.configure()
-    logfire.instrument_pydantic_ai()
-
     m = GoogleModel('gemini-2.0-flash', provider=google_provider)
 
     class CityLocation(BaseModel):
