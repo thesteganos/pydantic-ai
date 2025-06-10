@@ -215,9 +215,7 @@ class GoogleModel(Model):
     def _get_tool_config(
         self, model_request_parameters: ModelRequestParameters, tools: list[ToolDict] | None
     ) -> ToolConfigDict | None:
-        if not tools:
-            return None
-        elif model_request_parameters.output_mode == 'tool':
+        if model_request_parameters.output_mode == 'tool' and tools:
             names: list[str] = []
             for tool in tools:
                 for function_declaration in tool.get('function_declarations') or []:
@@ -225,7 +223,7 @@ class GoogleModel(Model):
                         names.append(name)
             return _tool_config(names)
         else:
-            return _tool_config([])  # pragma: no cover
+            return None
 
     @overload
     async def _generate_content(

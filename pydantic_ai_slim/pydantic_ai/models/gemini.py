@@ -194,12 +194,10 @@ class GeminiModel(Model):
     def _get_tool_config(
         self, model_request_parameters: ModelRequestParameters, tools: _GeminiTools | None
     ) -> _GeminiToolConfig | None:
-        if not tools:
-            return None
-        elif model_request_parameters.output_mode == 'tool':
+        if model_request_parameters.output_mode == 'tool' and tools:
             return _tool_config([t['name'] for t in tools['function_declarations']])
         else:
-            return _tool_config([])  # pragma: no cover
+            return None
 
     @asynccontextmanager
     async def _make_request(
