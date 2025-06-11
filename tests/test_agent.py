@@ -13,7 +13,7 @@ from pydantic_core import to_json
 from typing_extensions import Self
 
 from pydantic_ai import Agent, ModelRetry, RunContext, UnexpectedModelBehavior, UserError, capture_run_messages
-from pydantic_ai._output import JsonSchemaOutput, OutputType, PromptedJsonOutput, TextOutput, ToolOutput
+from pydantic_ai._output import JsonSchemaOutput, OutputSpec, PromptedJsonOutput, TextOutput, ToolOutput
 from pydantic_ai.agent import AgentRunResult
 from pydantic_ai.messages import (
     BinaryContent,
@@ -931,7 +931,7 @@ def test_output_type_text_output_function_with_retry():
     'output_type',
     [[str, str], [str, TextOutput(upcase)], [TextOutput(upcase), TextOutput(upcase)]],
 )
-def test_output_type_multiple_text_output(output_type: OutputType[str]):
+def test_output_type_multiple_text_output(output_type: OutputSpec[str]):
     with pytest.raises(UserError, match='Only one text output is allowed.'):
         Agent('test', output_type=output_type)
 
@@ -1298,6 +1298,80 @@ Don't include any text or Markdown fencing before or after.\
                 parts=[TextPart(content='{"city":"Mexico City","country":"Mexico"}')],
                 usage=Usage(requests=1, request_tokens=56, response_tokens=7, total_tokens=63),
                 model_name='function:return_city_location:',
+                timestamp=IsDatetime(),
+            ),
+        ]
+    )
+
+
+def test_output_type_prompted_json_with_defs():
+    class Foo(BaseModel):
+        """Foo description"""
+
+        foo: str
+
+    class Bar(BaseModel):
+        """Bar description"""
+
+        bar: str
+
+    class Baz(BaseModel):
+        """Baz description"""
+
+        baz: str
+
+    class FooBar(BaseModel):
+        """FooBar description"""
+
+        foo: Foo
+        bar: Bar
+
+    class FooBaz(BaseModel):
+        """FooBaz description"""
+
+        foo: Foo
+        baz: Baz
+
+    def return_foo_bar(_: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        text = '{"result": {"kind": "FooBar", "data": {"foo": {"foo": "foo"}, "bar": {"bar": "bar"}}}}'
+        return ModelResponse(parts=[TextPart(content=text)])
+
+    m = FunctionModel(return_foo_bar)
+
+    agent = Agent(
+        m,
+        output_type=PromptedJsonOutput(
+            [FooBar, FooBaz], name='FooBar or FooBaz', description='FooBar or FooBaz description'
+        ),
+    )
+
+    result = agent.run_sync('What is foo?')
+    assert result.output == snapshot(FooBar(foo=Foo(foo='foo'), bar=Bar(bar='bar')))
+    assert result.all_messages() == snapshot(
+        [
+            ModelRequest(
+                parts=[
+                    UserPromptPart(
+                        content='What is foo?',
+                        timestamp=IsDatetime(),
+                    )
+                ],
+                instructions="""\
+Always respond with a JSON object that's compatible with this schema:
+
+{"type": "object", "properties": {"result": {"anyOf": [{"type": "object", "properties": {"kind": {"type": "string", "const": "FooBar"}, "data": {"properties": {"foo": {"$ref": "#/$defs/Foo"}, "bar": {"$ref": "#/$defs/Bar"}}, "required": ["foo", "bar"], "type": "object"}}, "required": ["kind", "data"], "additionalProperties": false, "title": "FooBar", "description": "FooBar description"}, {"type": "object", "properties": {"kind": {"type": "string", "const": "FooBaz"}, "data": {"properties": {"foo": {"$ref": "#/$defs/Foo"}, "baz": {"$ref": "#/$defs/Baz"}}, "required": ["foo", "baz"], "type": "object"}}, "required": ["kind", "data"], "additionalProperties": false, "title": "FooBaz", "description": "FooBaz description"}]}}, "required": ["result"], "additionalProperties": false, "$defs": {"Bar": {"description": "Bar description", "properties": {"bar": {"type": "string"}}, "required": ["bar"], "title": "Bar", "type": "object"}, "Foo": {"description": "Foo description", "properties": {"foo": {"type": "string"}}, "required": ["foo"], "title": "Foo", "type": "object"}, "Baz": {"description": "Baz description", "properties": {"baz": {"type": "string"}}, "required": ["baz"], "title": "Baz", "type": "object"}}, "title": "FooBar or FooBaz", "description": "FooBaz description"}
+
+Don't include any text or Markdown fencing before or after.\
+""",
+            ),
+            ModelResponse(
+                parts=[
+                    TextPart(
+                        content='{"result": {"kind": "FooBar", "data": {"foo": {"foo": "foo"}, "bar": {"bar": "bar"}}}}'
+                    )
+                ],
+                usage=Usage(requests=1, request_tokens=53, response_tokens=17, total_tokens=70),
+                model_name='function:return_foo_bar:',
                 timestamp=IsDatetime(),
             ),
         ]

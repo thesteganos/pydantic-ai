@@ -160,7 +160,7 @@ class TextOutput(Generic[OutputDataT]):
 class JsonSchemaOutput(Generic[OutputDataT]):
     """Marker class to use JSON schema output for outputs."""
 
-    output_types: Sequence[OutputTypeOrFunction[OutputDataT]]
+    outputs: Sequence[OutputTypeOrFunction[OutputDataT]]
     name: str | None
     description: str | None
     strict: bool | None
@@ -173,7 +173,7 @@ class JsonSchemaOutput(Generic[OutputDataT]):
         description: str | None = None,
         strict: bool | None = True,
     ):
-        self.output_types = flatten_output_types(type_)
+        self.outputs = flatten_output_spec(type_)
         self.name = name
         self.description = description
         self.strict = strict
@@ -182,7 +182,7 @@ class JsonSchemaOutput(Generic[OutputDataT]):
 class PromptedJsonOutput(Generic[OutputDataT]):
     """Marker class to use prompted JSON mode for outputs."""
 
-    output_types: Sequence[OutputTypeOrFunction[OutputDataT]]
+    outputs: Sequence[OutputTypeOrFunction[OutputDataT]]
     name: str | None
     description: str | None
 
@@ -193,7 +193,7 @@ class PromptedJsonOutput(Generic[OutputDataT]):
         name: str | None = None,
         description: str | None = None,
     ):
-        self.output_types = flatten_output_types(type_)
+        self.outputs = flatten_output_spec(type_)
         self.name = name
         self.description = description
 
@@ -203,8 +203,8 @@ T_co = TypeVar('T_co', covariant=True)
 OutputTypeOrFunction = TypeAliasType(
     'OutputTypeOrFunction', Union[type[T_co], Callable[..., Union[Awaitable[T_co], T_co]]], type_params=(T_co,)
 )
-OutputType = TypeAliasType(
-    'OutputType',
+OutputSpec = TypeAliasType(
+    'OutputSpec',
     Union[
         OutputTypeOrFunction[T_co],
         ToolOutput[T_co],
@@ -230,20 +230,17 @@ OutputMode = Literal['text', 'tool', 'tool_or_text', 'json_schema', 'prompted_js
 
 @dataclass(init=False)
 class OutputSchema(Generic[OutputDataT]):
-    """Model the final output from an agent run.
-
-    Similar to `Tool` but for the final output of running an agent.
-    """
+    """Model the final output from an agent run."""
 
     mode: OutputMode | None = None
     text_output_schema: (
-        OutputObjectSchema[OutputDataT] | OutputUnionSchema[OutputDataT] | OutputTextSchema[OutputDataT] | None
+        OutputObjectSchema[OutputDataT] | OutputUnionSchema[OutputDataT] | OutputFunctionSchema[OutputDataT] | None
     ) = None
     tools: dict[str, OutputTool[OutputDataT]] = field(default_factory=dict)
 
     def __init__(
         self,
-        output_type: OutputType[OutputDataT],
+        output_spec: OutputSpec[OutputDataT],
         *,
         name: str | None = None,
         description: str | None = None,
@@ -254,39 +251,39 @@ class OutputSchema(Generic[OutputDataT]):
         self.text_output_schema = None
         self.tools = {}
 
-        if output_type is str:
+        if output_spec is str:
             self.mode = 'text'
             return
 
-        if isinstance(output_type, JsonSchemaOutput):
+        if isinstance(output_spec, JsonSchemaOutput):
             self.mode = 'json_schema'
             self.text_output_schema = self._build_text_output_schema(
-                output_type.output_types,
-                name=output_type.name,
-                description=output_type.description,
-                strict=output_type.strict,
+                output_spec.outputs,
+                name=output_spec.name,
+                description=output_spec.description,
+                strict=output_spec.strict,
             )
             return
 
-        if isinstance(output_type, PromptedJsonOutput):
+        if isinstance(output_spec, PromptedJsonOutput):
             self.mode = 'prompted_json'
             self.text_output_schema = self._build_text_output_schema(
-                output_type.output_types, name=output_type.name, description=output_type.description
+                output_spec.outputs, name=output_spec.name, description=output_spec.description
             )
             return
 
         text_outputs: Sequence[type[str] | TextOutput[OutputDataT]] = []
         tool_outputs: Sequence[ToolOutput[OutputDataT]] = []
         other_outputs: Sequence[OutputTypeOrFunction[OutputDataT]] = []
-        for output_type_or_marker in flatten_output_types(output_type):
-            if output_type_or_marker is str:
-                text_outputs.append(cast(type[str], output_type_or_marker))
-            elif isinstance(output_type_or_marker, TextOutput):
-                text_outputs.append(output_type_or_marker)
-            elif isinstance(output_type_or_marker, ToolOutput):
-                tool_outputs.append(output_type_or_marker)
+        for output in flatten_output_spec(output_spec):
+            if output is str:
+                text_outputs.append(cast(type[str], output))
+            elif isinstance(output, TextOutput):
+                text_outputs.append(output)
+            elif isinstance(output, ToolOutput):
+                tool_outputs.append(output)
             else:
-                other_outputs.append(output_type_or_marker)
+                other_outputs.append(output)
 
         self.tools = self._build_tools(tool_outputs + other_outputs, name=name, description=description, strict=strict)
 
@@ -300,7 +297,7 @@ class OutputSchema(Generic[OutputDataT]):
                 self.mode = 'tool_or_text'
 
             if isinstance(text_output, TextOutput):
-                self.text_output_schema = OutputTextSchema(text_output.output_function)
+                self.text_output_schema = OutputFunctionSchema(text_output.output_function)
         elif len(tool_outputs) > 0:
             self.mode = 'tool'
         elif len(other_outputs) > 0:
@@ -352,7 +349,7 @@ class OutputSchema(Generic[OutputDataT]):
             if strict is None:
                 strict = default_strict
 
-            parameters_schema = OutputObjectSchema(output_type=output_type, description=description, strict=strict)
+            parameters_schema = OutputObjectSchema(output=output_type, description=description, strict=strict)
             tools[name] = OutputTool(name=name, parameters_schema=parameters_schema, multiple=multiple)
 
         return tools
@@ -367,11 +364,11 @@ class OutputSchema(Generic[OutputDataT]):
         if len(outputs) == 0:
             return None  # pragma: no cover
 
-        outputs = flatten_output_types(outputs)
+        outputs = flatten_output_spec(outputs)
         if len(outputs) == 1:
-            return OutputObjectSchema(output_type=outputs[0], name=name, description=description, strict=strict)
+            return OutputObjectSchema(output=outputs[0], name=name, description=description, strict=strict)
 
-        return OutputUnionSchema(output_types=outputs, strict=strict)
+        return OutputUnionSchema(outputs=outputs, strict=strict, name=name, description=description)
 
     @property
     def allow_text_output(self) -> Literal['plain', 'json', False]:
@@ -501,48 +498,81 @@ class OutputUnionSchema(Generic[OutputDataT]):
 
     def __init__(
         self,
-        output_types: Sequence[OutputTypeOrFunction[OutputDataT]],
+        outputs: Sequence[OutputTypeOrFunction[OutputDataT]],
+        *,
+        name: str | None = None,
+        description: str | None = None,
         strict: bool | None = None,
     ):
+        json_schemas: list[ObjectJsonSchema] = []
         self._object_schemas = {}
-        # TODO: Ensure keys are unique
-        self._object_schemas = {
-            output_type.__name__: OutputObjectSchema(output_type=output_type, strict=strict)
-            for output_type in output_types
-        }
+        for output in outputs:
+            object_schema = OutputObjectSchema(output=output, strict=strict)
+            object_def = object_schema.object_def
 
-        self._root_object_schema = OutputObjectSchema(output_type=OutputUnionData)
+            object_key = object_def.name or output.__name__
+            i = 1
+            original_key = object_key
+            while object_key in self._object_schemas:
+                i += 1
+                object_key = f'{original_key}_{i}'
 
-        # TODO: Account for conflicting $defs and $refs
+            self._object_schemas[object_key] = object_schema
+
+            json_schema = object_def.json_schema
+            if object_name := object_def.name:
+                json_schema['title'] = object_name
+            if object_description := object_def.description:
+                json_schema['description'] = object_description
+
+            json_schemas.append(json_schema)
+
+        json_schemas, all_defs = _utils.merge_json_schema_defs(json_schemas)
+
+        discriminated_json_schemas: list[ObjectJsonSchema] = []
+        for object_key, json_schema in zip(self._object_schemas.keys(), json_schemas):
+            title = json_schema.pop('title', None)
+            description = json_schema.pop('description', None)
+
+            discriminated_json_schema = {
+                'type': 'object',
+                'properties': {
+                    'kind': {
+                        'type': 'string',
+                        'const': object_key,
+                    },
+                    'data': json_schema,
+                },
+                'required': ['kind', 'data'],
+                'additionalProperties': False,
+            }
+            if title:
+                discriminated_json_schema['title'] = title
+            if description:
+                discriminated_json_schema['description'] = description
+
+            discriminated_json_schemas.append(discriminated_json_schema)
+
+        self._root_object_schema = OutputObjectSchema(output=OutputUnionData)
+
         json_schema = {
             'type': 'object',
             'properties': {
                 'result': {
-                    'anyOf': [
-                        {
-                            'type': 'object',
-                            'properties': {
-                                'kind': {
-                                    'type': 'string',
-                                    'const': name,
-                                },
-                                'data': object_schema.object_def.json_schema,  # TODO: Pop description here?
-                            },
-                            'description': object_schema.object_def.description or name,  # TODO: Better description
-                            'required': ['kind', 'data'],
-                            'additionalProperties': False,
-                        }
-                        for name, object_schema in self._object_schemas.items()
-                    ],
+                    'anyOf': discriminated_json_schemas,
                 }
             },
             'required': ['result'],
             'additionalProperties': False,
         }
+        if all_defs:
+            json_schema['$defs'] = all_defs
 
         self.object_def = OutputObjectDefinition(
             json_schema=json_schema,
             strict=strict,
+            name=name,
+            description=description,
         )
 
     async def process(
@@ -552,7 +582,6 @@ class OutputUnionSchema(Generic[OutputDataT]):
         allow_partial: bool = False,
         wrap_validation_errors: bool = True,
     ) -> OutputDataT:
-        # TODO: Error handling?
         result = await self._root_object_schema.process(
             data, run_context, allow_partial=allow_partial, wrap_validation_errors=wrap_validation_errors
         )
@@ -563,7 +592,11 @@ class OutputUnionSchema(Generic[OutputDataT]):
         try:
             object_schema = self._object_schemas[kind]
         except KeyError as e:
-            raise ToolRetryError(_messages.RetryPromptPart(content=f'Invalid kind: {kind}')) from e  # pragma: no cover
+            if wrap_validation_errors:
+                m = _messages.RetryPromptPart(content=f'Invalid kind: {kind}')
+                raise ToolRetryError(m) from e
+            else:
+                raise  # pragma: lax no cover
 
         return await object_schema.process(
             data, run_context, allow_partial=allow_partial, wrap_validation_errors=wrap_validation_errors
@@ -579,26 +612,26 @@ class OutputObjectSchema(Generic[OutputDataT]):
 
     def __init__(
         self,
-        output_type: OutputTypeOrFunction[OutputDataT],
+        output: OutputTypeOrFunction[OutputDataT],
         *,
         name: str | None = None,
         description: str | None = None,
         strict: bool | None = None,
     ):
-        if inspect.isfunction(output_type) or inspect.ismethod(output_type):
-            self._function_schema = _function_schema.function_schema(output_type, GenerateToolJsonSchema)
+        if inspect.isfunction(output) or inspect.ismethod(output):
+            self._function_schema = _function_schema.function_schema(output, GenerateToolJsonSchema)
             self._validator = self._function_schema.validator
             json_schema = self._function_schema.json_schema
             json_schema['description'] = self._function_schema.description
         else:
             type_adapter: TypeAdapter[Any]
-            if _utils.is_model_like(output_type):
-                type_adapter = TypeAdapter(output_type)
+            if _utils.is_model_like(output):
+                type_adapter = TypeAdapter(output)
             else:
                 self.outer_typed_dict_key = 'response'
                 response_data_typed_dict = TypedDict(  # noqa: UP013
                     'response_data_typed_dict',
-                    {'response': cast(type[OutputDataT], output_type)},  # pyright: ignore[reportInvalidTypeForm]
+                    {'response': cast(type[OutputDataT], output)},  # pyright: ignore[reportInvalidTypeForm]
                 )
                 type_adapter = TypeAdapter(response_data_typed_dict)
 
@@ -619,7 +652,7 @@ class OutputObjectSchema(Generic[OutputDataT]):
                 description = f'{description}. {json_schema_description}'
 
         self.object_def = OutputObjectDefinition(
-            name=name or getattr(output_type, '__name__', None),
+            name=name or getattr(output, '__name__', None),
             description=description,
             json_schema=json_schema,
             strict=strict,
@@ -677,7 +710,7 @@ class OutputObjectSchema(Generic[OutputDataT]):
 
 
 @dataclass(init=False)
-class OutputTextSchema(Generic[OutputDataT]):
+class OutputFunctionSchema(Generic[OutputDataT]):
     _function_schema: _function_schema.FunctionSchema
     _str_argument_name: str
 
@@ -804,17 +837,17 @@ def get_union_args(tp: Any) -> tuple[Any, ...]:
         return ()
 
 
-def flatten_output_types(output_type: T | Sequence[T]) -> list[T]:
-    output_types: Sequence[T]
-    if isinstance(output_type, Sequence):
-        output_types = output_type
+def flatten_output_spec(output_spec: T | Sequence[T]) -> list[T]:
+    outputs: Sequence[T]
+    if isinstance(output_spec, Sequence):
+        outputs = output_spec
     else:
-        output_types = (output_type,)
+        outputs = (output_spec,)
 
-    output_types_flat: list[T] = []
-    for output_type in output_types:
-        if union_types := get_union_args(output_type):
-            output_types_flat.extend(union_types)
+    outputs_flat: list[T] = []
+    for output in outputs:
+        if union_types := get_union_args(output):
+            outputs_flat.extend(union_types)
         else:
-            output_types_flat.append(output_type)
-    return output_types_flat
+            outputs_flat.append(output)
+    return outputs_flat
