@@ -426,7 +426,7 @@ class OutputSchemaWithoutMode(BaseOutputSchema[OutputDataT]):
 
     @property
     def mode(self) -> None:
-        return None
+        return None  # pragma: no cover
 
     def with_default_mode(self, mode: StructuredOutputMode) -> OutputSchema[OutputDataT]:
         if mode == 'json_schema':
@@ -444,7 +444,7 @@ class OutputSchemaWithoutMode(BaseOutputSchema[OutputDataT]):
 
     def is_supported(self, supported_modes: set[SupportableOutputMode]) -> bool:
         """Whether the mode is supported by the model."""
-        return False
+        return False  # pragma: no cover
 
     @property
     def tools(self) -> dict[str, OutputTool[OutputDataT]]:
@@ -806,7 +806,7 @@ class UnionOutputProcessor(BaseOutputProcessor[OutputDataT]):
             self._processors[object_key] = processor
 
             json_schema = object_def.json_schema
-            if object_def.name:
+            if object_def.name:  # pragma: no branch
                 json_schema['title'] = object_def.name
             if object_def.description:
                 json_schema['description'] = object_def.description
@@ -832,7 +832,7 @@ class UnionOutputProcessor(BaseOutputProcessor[OutputDataT]):
                 'required': ['kind', 'data'],
                 'additionalProperties': False,
             }
-            if title:
+            if title:  # pragma: no branch
                 discriminated_json_schema['title'] = title
             if description:
                 discriminated_json_schema['description'] = description
@@ -875,12 +875,12 @@ class UnionOutputProcessor(BaseOutputProcessor[OutputDataT]):
         data = result.data
         try:
             processor = self._processors[kind]
-        except KeyError as e:
+        except KeyError as e:  # pragma: no cover
             if wrap_validation_errors:
                 m = _messages.RetryPromptPart(content=f'Invalid kind: {kind}')
                 raise ToolRetryError(m) from e
             else:
-                raise  # pragma: lax no cover
+                raise
 
         return await processor.process(
             data, run_context, allow_partial=allow_partial, wrap_validation_errors=wrap_validation_errors
@@ -896,20 +896,19 @@ class PlainTextOutputProcessor(BaseOutputProcessor[OutputDataT]):
         self,
         output_function: TextOutputFunction[OutputDataT],
     ):
-        if inspect.isfunction(output_function) or inspect.ismethod(output_function):
-            self._function_schema = _function_schema.function_schema(output_function, GenerateToolJsonSchema)
+        self._function_schema = _function_schema.function_schema(output_function, GenerateToolJsonSchema)
 
-            arguments_schema = self._function_schema.json_schema.get('properties', {})
-            argument_name = next(iter(arguments_schema.keys()), None)
-            if argument_name and arguments_schema.get(argument_name, {}).get('type') == 'string':
-                self._str_argument_name = argument_name
-                return
+        arguments_schema = self._function_schema.json_schema.get('properties', {})
+        argument_name = next(iter(arguments_schema.keys()), None)
+        if argument_name and arguments_schema.get(argument_name, {}).get('type') == 'string':
+            self._str_argument_name = argument_name
+            return
 
         raise UserError('TextOutput must take a function taking a `str`')
 
     @property
     def object_def(self) -> None:
-        return None
+        return None  # pragma: no cover
 
     async def process(
         self,

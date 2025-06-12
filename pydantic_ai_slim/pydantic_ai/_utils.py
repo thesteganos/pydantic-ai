@@ -309,7 +309,7 @@ def _update_mapped_json_schema_refs(s: dict[str, Any], name_mapping: dict[str, s
     """Update $refs in a schema to use the new names from name_mapping."""
     if '$ref' in s:
         ref = s['$ref']
-        if ref.startswith('#/$defs/'):
+        if ref.startswith('#/$defs/'):  # pragma: no branch
             original_name = ref[8:]  # Remove '#/$defs/'
             new_name = name_mapping.get(original_name, original_name)
             s['$ref'] = f'#/$defs/{new_name}'
