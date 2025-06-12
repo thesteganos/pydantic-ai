@@ -3,18 +3,16 @@ from __future__ import annotations as _annotations
 import inspect
 import json
 import re
+from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
-from textwrap import dedent
-from typing import Any, Callable, Generic, Literal, Union, cast
+from typing import Any, Callable, Generic, Literal, Union, cast, overload
 
 from pydantic import TypeAdapter, ValidationError
 from pydantic_core import SchemaValidator
-from typing_extensions import TypeAliasType, TypedDict, TypeVar, get_args, get_origin
+from typing_extensions import TypeAliasType, TypedDict, TypeVar, assert_never, get_args, get_origin
 from typing_inspection import typing_objects
 from typing_inspection.introspection import is_union_origin
-
-from pydantic_ai.profiles import ModelProfile
 
 from . import _function_schema, _utils, messages as _messages
 from .exceptions import ModelRetry, UserError
@@ -55,15 +53,6 @@ Usage `OutputValidatorFunc[AgentDepsT, T]`.
 
 DEFAULT_OUTPUT_TOOL_NAME = 'final_result'
 DEFAULT_OUTPUT_TOOL_DESCRIPTION = 'The final response which ends this conversation'
-DEFAULT_PROMPTED_JSON_PROMPT = dedent(
-    """
-    Always respond with a JSON object that's compatible with this schema:
-
-    {schema}
-
-    Don't include any text or Markdown fencing before or after.
-    """
-)
 
 
 @dataclass
@@ -225,52 +214,94 @@ TextOutputFunction = TypeAliasType(
     type_params=(T_co,),
 )
 
-OutputMode = Literal['text', 'tool', 'tool_or_text', 'json_schema', 'prompted_json']
+
+OutputMode = Literal['text', 'tool', 'json_schema', 'prompted_json', 'tool_or_text']
+"""All output modes."""
+SupportableOutputMode = Literal['tool', 'json_schema']
+"""Output modes that require specific support by a model (class). Used by ModelProfile.output_modes"""
+StructuredOutputMode = Literal['tool', 'json_schema', 'prompted_json']
+"""Output modes that can be used for any structured output. Used by ModelProfile.default_output_mode"""
+
+
+class BaseOutputSchema(ABC, Generic[OutputDataT]):
+    @property
+    @abstractmethod
+    def mode(self) -> OutputMode | None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def with_default_mode(self, mode: StructuredOutputMode) -> OutputSchema[OutputDataT]:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def is_supported(self, supported_modes: set[SupportableOutputMode]) -> bool:
+        """Whether the mode is supported by the model."""
+        raise NotImplementedError()
+
+    @property
+    def tools(self) -> dict[str, OutputTool[OutputDataT]]:
+        """Get the tools for this output schema."""
+        return {}
 
 
 @dataclass(init=False)
-class OutputSchema(Generic[OutputDataT]):
+class OutputSchema(BaseOutputSchema[OutputDataT], ABC):
     """Model the final output from an agent run."""
 
-    mode: OutputMode | None = None
-    text_output_schema: (
-        OutputObjectSchema[OutputDataT] | OutputUnionSchema[OutputDataT] | OutputFunctionSchema[OutputDataT] | None
-    ) = None
-    tools: dict[str, OutputTool[OutputDataT]] = field(default_factory=dict)
-
-    def __init__(
-        self,
+    @classmethod
+    @overload
+    def build(
+        cls,
         output_spec: OutputSpec[OutputDataT],
         *,
+        default_mode: StructuredOutputMode,
         name: str | None = None,
         description: str | None = None,
         strict: bool | None = None,
-    ):
-        """Build an OutputSchema dataclass from an output type."""
-        self.mode = None
-        self.text_output_schema = None
-        self.tools = {}
+    ) -> OutputSchema[OutputDataT]: ...
 
+    @classmethod
+    @overload
+    def build(
+        cls,
+        output_spec: OutputSpec[OutputDataT],
+        *,
+        default_mode: None = None,
+        name: str | None = None,
+        description: str | None = None,
+        strict: bool | None = None,
+    ) -> OutputSchemaWithoutMode[OutputDataT]: ...
+
+    @classmethod
+    def build(
+        cls,
+        output_spec: OutputSpec[OutputDataT],
+        *,
+        default_mode: StructuredOutputMode | None = None,
+        name: str | None = None,
+        description: str | None = None,
+        strict: bool | None = None,
+    ) -> BaseOutputSchema[OutputDataT]:
+        """Build an OutputSchema dataclass from an output type."""
         if output_spec is str:
-            self.mode = 'text'
-            return
+            return PlainTextOutputSchema()
 
         if isinstance(output_spec, JsonSchemaOutput):
-            self.mode = 'json_schema'
-            self.text_output_schema = self._build_text_output_schema(
-                output_spec.outputs,
-                name=output_spec.name,
-                description=output_spec.description,
-                strict=output_spec.strict,
+            return JsonSchemaOutputSchema(
+                text_processor=cls._build_text_processor(
+                    output_spec.outputs,
+                    name=output_spec.name,
+                    description=output_spec.description,
+                    strict=output_spec.strict,
+                ),
             )
-            return
 
         if isinstance(output_spec, PromptedJsonOutput):
-            self.mode = 'prompted_json'
-            self.text_output_schema = self._build_text_output_schema(
-                output_spec.outputs, name=output_spec.name, description=output_spec.description
+            return PromptedJsonOutputSchema(
+                text_processor=cls._build_text_processor(
+                    output_spec.outputs, name=output_spec.name, description=output_spec.description
+                ),
             )
-            return
 
         text_outputs: Sequence[type[str] | TextOutput[OutputDataT]] = []
         tool_outputs: Sequence[ToolOutput[OutputDataT]] = []
@@ -285,27 +316,37 @@ class OutputSchema(Generic[OutputDataT]):
             else:
                 other_outputs.append(output)
 
-        self.tools = self._build_tools(tool_outputs + other_outputs, name=name, description=description, strict=strict)
+        tools = cls._build_tools(tool_outputs + other_outputs, name=name, description=description, strict=strict)
 
         if len(text_outputs) > 0:
             if len(text_outputs) > 1:
                 raise UserError('Only one text output is allowed.')
             text_output = text_outputs[0]
 
-            self.mode = 'text'
-            if len(self.tools) > 0:
-                self.mode = 'tool_or_text'
-
+            text_output_schema = None
             if isinstance(text_output, TextOutput):
-                self.text_output_schema = OutputFunctionSchema(text_output.output_function)
-        elif len(tool_outputs) > 0:
-            self.mode = 'tool'
-        elif len(other_outputs) > 0:
-            self.text_output_schema = self._build_text_output_schema(
-                other_outputs, name=name, description=description, strict=strict
+                text_output_schema = PlainTextOutputProcessor(text_output.output_function)
+
+            if len(tools) == 0:
+                return PlainTextOutputSchema(text_processor=text_output_schema)
+            else:
+                return ToolOrTextOutputSchema(text_processor=text_output_schema, tools=tools)
+
+        if len(tool_outputs) > 0:
+            return ToolOutputSchema(tools=tools)
+
+        if len(other_outputs) > 0:
+            schema = OutputSchemaWithoutMode(
+                text_processor=cls._build_text_processor(
+                    other_outputs, name=name, description=description, strict=strict
+                ),
+                tools=tools,
             )
-        else:
-            raise UserError('No output type provided.')  # pragma: no cover
+            if default_mode:
+                schema = schema.with_default_mode(default_mode)
+            return schema
+
+        raise UserError('No output type provided.')  # pragma: no cover
 
     @staticmethod
     def _build_tools(
@@ -349,44 +390,229 @@ class OutputSchema(Generic[OutputDataT]):
             if strict is None:
                 strict = default_strict
 
-            parameters_schema = OutputObjectSchema(output=output_type, description=description, strict=strict)
+            parameters_schema = ObjectOutputProcessor(output=output_type, description=description, strict=strict)
             tools[name] = OutputTool(name=name, parameters_schema=parameters_schema, multiple=multiple)
 
         return tools
 
     @staticmethod
-    def _build_text_output_schema(
+    def _build_text_processor(
         outputs: Sequence[OutputTypeOrFunction[OutputDataT]],
         name: str | None = None,
         description: str | None = None,
         strict: bool | None = None,
-    ) -> OutputObjectSchema[OutputDataT] | OutputUnionSchema[OutputDataT] | None:
-        if len(outputs) == 0:
-            return None  # pragma: no cover
-
+    ) -> ObjectOutputProcessor[OutputDataT] | UnionOutputProcessor[OutputDataT]:
         outputs = flatten_output_spec(outputs)
         if len(outputs) == 1:
-            return OutputObjectSchema(output=outputs[0], name=name, description=description, strict=strict)
+            return ObjectOutputProcessor(output=outputs[0], name=name, description=description, strict=strict)
 
-        return OutputUnionSchema(outputs=outputs, strict=strict, name=name, description=description)
+        return UnionOutputProcessor(outputs=outputs, strict=strict, name=name, description=description)
 
     @property
-    def allow_text_output(self) -> Literal['plain', 'json', False]:
-        """Whether the model allows text output."""
-        if self.mode == 'tool':
-            return False
-        if self.mode in ('text', 'tool_or_text'):
-            return 'plain'
-        return 'json'
+    @abstractmethod
+    def mode(self) -> OutputMode:
+        raise NotImplementedError()
 
-    def is_mode_supported(self, profile: ModelProfile) -> bool:
-        """Whether the model supports the output mode."""
-        mode = self.mode
-        if mode in ('text', 'prompted_json'):
-            return True
-        if self.mode == 'tool_or_text':
-            mode = 'tool'
-        return mode in profile.output_modes
+    def with_default_mode(self, mode: StructuredOutputMode) -> OutputSchema[OutputDataT]:
+        return self
+
+
+@dataclass(init=False)
+class OutputSchemaWithoutMode(BaseOutputSchema[OutputDataT]):
+    text_processor: ObjectOutputProcessor[OutputDataT] | UnionOutputProcessor[OutputDataT]
+    _tools: dict[str, OutputTool[OutputDataT]] = field(default_factory=dict)
+
+    def __init__(
+        self,
+        text_processor: ObjectOutputProcessor[OutputDataT] | UnionOutputProcessor[OutputDataT],
+        tools: dict[str, OutputTool[OutputDataT]],
+    ):
+        self.text_processor = text_processor
+        self._tools = tools
+
+    @property
+    def mode(self) -> None:
+        return None
+
+    def with_default_mode(self, mode: StructuredOutputMode) -> OutputSchema[OutputDataT]:
+        if mode == 'json_schema':
+            return JsonSchemaOutputSchema(
+                text_processor=self.text_processor,
+            )
+        elif mode == 'prompted_json':
+            return PromptedJsonOutputSchema(
+                text_processor=self.text_processor,
+            )
+        elif mode == 'tool':
+            return ToolOutputSchema(tools=self.tools)
+        else:
+            assert_never(mode)
+
+    def is_supported(self, supported_modes: set[SupportableOutputMode]) -> bool:
+        """Whether the mode is supported by the model."""
+        return False
+
+    @property
+    def tools(self) -> dict[str, OutputTool[OutputDataT]]:
+        """Get the tools for this output schema."""
+        # We return tools here as they're checked in Agent._register_tool.
+        # At that point we may don't know yet what output mode we're going to use if no model was provided or it was deferred until agent.run time.
+        return self._tools
+
+
+class TextOutputSchema(OutputSchema[OutputDataT], ABC):
+    @abstractmethod
+    async def process(
+        self,
+        text: str,
+        run_context: RunContext[AgentDepsT],
+        allow_partial: bool = False,
+        wrap_validation_errors: bool = True,
+    ) -> OutputDataT:
+        raise NotImplementedError()
+
+
+@dataclass
+class PlainTextOutputSchema(TextOutputSchema[OutputDataT]):
+    text_processor: PlainTextOutputProcessor[OutputDataT] | None = None
+
+    @property
+    def mode(self) -> OutputMode:
+        return 'text'
+
+    def is_supported(self, supported_modes: set[SupportableOutputMode]) -> bool:
+        """Whether the mode is supported by the model."""
+        return True
+
+    async def process(
+        self,
+        text: str,
+        run_context: RunContext[AgentDepsT],
+        allow_partial: bool = False,
+        wrap_validation_errors: bool = True,
+    ) -> OutputDataT:
+        """Validate an output message.
+
+        Args:
+            text: The output text to validate.
+            run_context: The current run context.
+            allow_partial: If true, allow partial validation.
+            wrap_validation_errors: If true, wrap the validation errors in a retry message.
+
+        Returns:
+            Either the validated output data (left) or a retry message (right).
+        """
+        if self.text_processor is None:
+            return cast(OutputDataT, text)
+
+        return await self.text_processor.process(
+            text, run_context, allow_partial=allow_partial, wrap_validation_errors=wrap_validation_errors
+        )
+
+
+@dataclass
+class JsonTextOutputSchema(TextOutputSchema[OutputDataT], ABC):
+    text_processor: ObjectOutputProcessor[OutputDataT] | UnionOutputProcessor[OutputDataT]
+
+    @property
+    def object_def(self) -> OutputObjectDefinition:
+        return self.text_processor.object_def
+
+    async def process(
+        self,
+        text: str,
+        run_context: RunContext[AgentDepsT],
+        allow_partial: bool = False,
+        wrap_validation_errors: bool = True,
+    ) -> OutputDataT:
+        """Validate an output message.
+
+        Args:
+            text: The output text to validate.
+            run_context: The current run context.
+            allow_partial: If true, allow partial validation.
+            wrap_validation_errors: If true, wrap the validation errors in a retry message.
+
+        Returns:
+            Either the validated output data (left) or a retry message (right).
+        """
+
+        def strip_markdown_fences(text: str) -> str:
+            if text.startswith('{'):
+                return text
+
+            regex = r'```(?:\w+)?\n(\{.*\})\n```'
+            match = re.search(regex, text, re.DOTALL)
+            if match:
+                return match.group(1)
+
+            return text
+
+        text = strip_markdown_fences(text)
+
+        return await self.text_processor.process(
+            text, run_context, allow_partial=allow_partial, wrap_validation_errors=wrap_validation_errors
+        )
+
+
+class JsonSchemaOutputSchema(JsonTextOutputSchema[OutputDataT]):
+    @property
+    def mode(self) -> OutputMode:
+        return 'json_schema'
+
+    def is_supported(self, supported_modes: set[SupportableOutputMode]) -> bool:
+        """Whether the mode is supported by the model."""
+        return 'json_schema' in supported_modes
+
+
+class PromptedJsonOutputSchema(JsonTextOutputSchema[OutputDataT]):
+    @property
+    def mode(self) -> OutputMode:
+        return 'prompted_json'
+
+    def is_supported(self, supported_modes: set[SupportableOutputMode]) -> bool:
+        """Whether the mode is supported by the model."""
+        return True
+
+    def instructions(self, template: str) -> str:
+        """Get instructions for model to output manual JSON matching the schema."""
+        object_def = self.object_def
+        schema = object_def.json_schema.copy()
+        if object_def.name:
+            schema['title'] = object_def.name
+        if object_def.description:
+            schema['description'] = object_def.description
+
+        return template.format(schema=json.dumps(schema))
+
+
+@dataclass(init=False)
+class ToolOutputSchema(OutputSchema[OutputDataT]):
+    _tools: dict[str, OutputTool[OutputDataT]] = field(default_factory=dict)
+
+    def __init__(self, tools: dict[str, OutputTool[OutputDataT]]):
+        self._tools = tools
+
+    @property
+    def mode(self) -> OutputMode:
+        return 'tool'
+
+    def is_supported(self, supported_modes: set[SupportableOutputMode]) -> bool:
+        """Whether the mode is supported by the model."""
+        return 'tool' in supported_modes
+
+    @property
+    def tools(self) -> dict[str, OutputTool[OutputDataT]]:
+        """Get the tools for this output schema."""
+        return self._tools
+
+    def tool_names(self) -> list[str]:
+        """Return the names of the tools."""
+        return list(self.tools.keys())
+
+    def tool_defs(self) -> list[ToolDefinition]:
+        """Get tool definitions to register with the model."""
+        return [t.tool_def for t in self.tools.values()]
 
     def find_named_tool(
         self, parts: Iterable[_messages.ModelResponsePart], tool_name: str
@@ -407,55 +633,24 @@ class OutputSchema(Generic[OutputDataT]):
                 if result := self.tools.get(part.tool_name):
                     yield part, result
 
-    def tool_names(self) -> list[str]:
-        """Return the names of the tools."""
-        return list(self.tools.keys())
 
-    def tool_defs(self) -> list[ToolDefinition]:
-        """Get tool definitions to register with the model."""
-        if self.mode not in ('tool', 'tool_or_text'):
-            return []
-        return [t.tool_def for t in self.tools.values()]
-
-    async def process(
+@dataclass(init=False)
+class ToolOrTextOutputSchema(PlainTextOutputSchema[OutputDataT], ToolOutputSchema[OutputDataT]):
+    def __init__(
         self,
-        text: str,
-        run_context: RunContext[AgentDepsT],
-        allow_partial: bool = False,
-        wrap_validation_errors: bool = True,
-    ) -> OutputDataT:
-        """Validate an output message.
+        text_processor: PlainTextOutputProcessor[OutputDataT] | None,
+        tools: dict[str, OutputTool[OutputDataT]],
+    ):
+        self.text_processor = text_processor
+        self._tools = tools
 
-        Args:
-            text: The output text to validate.
-            run_context: The current run context.
-            allow_partial: If true, allow partial validation.
-            wrap_validation_errors: If true, wrap the validation errors in a retry message.
+    @property
+    def mode(self) -> OutputMode:
+        return 'tool_or_text'
 
-        Returns:
-            Either the validated output data (left) or a retry message (right).
-        """
-        assert self.allow_text_output is not False
-
-        if self.text_output_schema is None:
-            return cast(OutputDataT, text)
-
-        def strip_markdown_fences(text: str) -> str:
-            if text.startswith('{'):
-                return text
-
-            regex = r'```(?:\w+)?\n(\{.*\})\n```'
-            match = re.search(regex, text, re.DOTALL)
-            if match:
-                return match.group(1)
-
-            return text
-
-        text = strip_markdown_fences(text)
-
-        return await self.text_output_schema.process(
-            text, run_context, allow_partial=allow_partial, wrap_validation_errors=wrap_validation_errors
-        )
+    def is_supported(self, supported_modes: set[SupportableOutputMode]) -> bool:
+        """Whether the mode is supported by the model."""
+        return 'tool' in supported_modes
 
 
 @dataclass
@@ -465,146 +660,23 @@ class OutputObjectDefinition:
     description: str | None = None
     strict: bool | None = None
 
-    @property
-    def instructions(self) -> str:
-        """Get instructions for model to output manual JSON matching the schema."""
-        schema = self.json_schema.copy()
-        if self.name:
-            schema['title'] = self.name
-        if self.description:
-            schema['description'] = self.description
-
-        # Eventually move DEFAULT_PROMPTED_JSON_PROMPT to ModelProfile so it can be tweaked on a per model basis
-        return DEFAULT_PROMPTED_JSON_PROMPT.format(schema=json.dumps(schema))
-
 
 @dataclass(init=False)
-class OutputUnionDataEntry:
-    kind: str
-    data: dict[str, Any]
-
-
-@dataclass(init=False)
-class OutputUnionData:
-    result: OutputUnionDataEntry
-
-
-# TODO: Better class naming
-@dataclass(init=False)
-class OutputUnionSchema(Generic[OutputDataT]):
-    object_def: OutputObjectDefinition
-    _root_object_schema: OutputObjectSchema[OutputUnionData]
-    _object_schemas: dict[str, OutputObjectSchema[OutputDataT]]
-
-    def __init__(
-        self,
-        outputs: Sequence[OutputTypeOrFunction[OutputDataT]],
-        *,
-        name: str | None = None,
-        description: str | None = None,
-        strict: bool | None = None,
-    ):
-        json_schemas: list[ObjectJsonSchema] = []
-        self._object_schemas = {}
-        for output in outputs:
-            object_schema = OutputObjectSchema(output=output, strict=strict)
-            object_def = object_schema.object_def
-
-            object_key = object_def.name or output.__name__
-            i = 1
-            original_key = object_key
-            while object_key in self._object_schemas:
-                i += 1
-                object_key = f'{original_key}_{i}'
-
-            self._object_schemas[object_key] = object_schema
-
-            json_schema = object_def.json_schema
-            if object_name := object_def.name:
-                json_schema['title'] = object_name
-            if object_description := object_def.description:
-                json_schema['description'] = object_description
-
-            json_schemas.append(json_schema)
-
-        json_schemas, all_defs = _utils.merge_json_schema_defs(json_schemas)
-
-        discriminated_json_schemas: list[ObjectJsonSchema] = []
-        for object_key, json_schema in zip(self._object_schemas.keys(), json_schemas):
-            title = json_schema.pop('title', None)
-            description = json_schema.pop('description', None)
-
-            discriminated_json_schema = {
-                'type': 'object',
-                'properties': {
-                    'kind': {
-                        'type': 'string',
-                        'const': object_key,
-                    },
-                    'data': json_schema,
-                },
-                'required': ['kind', 'data'],
-                'additionalProperties': False,
-            }
-            if title:
-                discriminated_json_schema['title'] = title
-            if description:
-                discriminated_json_schema['description'] = description
-
-            discriminated_json_schemas.append(discriminated_json_schema)
-
-        self._root_object_schema = OutputObjectSchema(output=OutputUnionData)
-
-        json_schema = {
-            'type': 'object',
-            'properties': {
-                'result': {
-                    'anyOf': discriminated_json_schemas,
-                }
-            },
-            'required': ['result'],
-            'additionalProperties': False,
-        }
-        if all_defs:
-            json_schema['$defs'] = all_defs
-
-        self.object_def = OutputObjectDefinition(
-            json_schema=json_schema,
-            strict=strict,
-            name=name,
-            description=description,
-        )
-
+class BaseOutputProcessor(ABC, Generic[OutputDataT]):
+    @abstractmethod
     async def process(
         self,
-        data: str | dict[str, Any] | None,
+        data: str,
         run_context: RunContext[AgentDepsT],
         allow_partial: bool = False,
         wrap_validation_errors: bool = True,
     ) -> OutputDataT:
-        result = await self._root_object_schema.process(
-            data, run_context, allow_partial=allow_partial, wrap_validation_errors=wrap_validation_errors
-        )
-
-        result = result.result
-        kind = result.kind
-        data = result.data
-        try:
-            object_schema = self._object_schemas[kind]
-        except KeyError as e:
-            if wrap_validation_errors:
-                m = _messages.RetryPromptPart(content=f'Invalid kind: {kind}')
-                raise ToolRetryError(m) from e
-            else:
-                raise  # pragma: lax no cover
-
-        return await object_schema.process(
-            data, run_context, allow_partial=allow_partial, wrap_validation_errors=wrap_validation_errors
-        )
+        """Process an output message, performing validation and (if necessary) calling the output function."""
+        raise NotImplementedError()
 
 
 @dataclass(init=False)
-class OutputObjectSchema(Generic[OutputDataT]):
+class ObjectOutputProcessor(BaseOutputProcessor[OutputDataT]):
     object_def: OutputObjectDefinition
     outer_typed_dict_key: str | None = None
     _validator: SchemaValidator
@@ -709,8 +781,132 @@ class OutputObjectSchema(Generic[OutputDataT]):
         return output
 
 
+@dataclass
+class UnionOutputResult:
+    kind: str
+    data: ObjectJsonSchema
+
+
+@dataclass
+class UnionOutputModel:
+    result: UnionOutputResult
+
+
 @dataclass(init=False)
-class OutputFunctionSchema(Generic[OutputDataT]):
+class UnionOutputProcessor(BaseOutputProcessor[OutputDataT]):
+    object_def: OutputObjectDefinition
+    _union_schema: ObjectOutputProcessor[UnionOutputModel]
+    _object_schemas: dict[str, ObjectOutputProcessor[OutputDataT]]
+
+    def __init__(
+        self,
+        outputs: Sequence[OutputTypeOrFunction[OutputDataT]],
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        strict: bool | None = None,
+    ):
+        self._union_schema = ObjectOutputProcessor(output=UnionOutputModel)
+
+        json_schemas: list[ObjectJsonSchema] = []
+        self._object_schemas = {}
+        for output in outputs:
+            object_schema = ObjectOutputProcessor(output=output, strict=strict)
+            object_def = object_schema.object_def
+
+            object_key = object_def.name or output.__name__
+            i = 1
+            original_key = object_key
+            while object_key in self._object_schemas:
+                i += 1
+                object_key = f'{original_key}_{i}'
+
+            self._object_schemas[object_key] = object_schema
+
+            json_schema = object_def.json_schema
+            if object_name := object_def.name:
+                json_schema['title'] = object_name
+            if object_description := object_def.description:
+                json_schema['description'] = object_description
+
+            json_schemas.append(json_schema)
+
+        json_schemas, all_defs = _utils.merge_json_schema_defs(json_schemas)
+
+        discriminated_json_schemas: list[ObjectJsonSchema] = []
+        for object_key, json_schema in zip(self._object_schemas.keys(), json_schemas):
+            title = json_schema.pop('title', None)
+            description = json_schema.pop('description', None)
+
+            discriminated_json_schema = {
+                'type': 'object',
+                'properties': {
+                    'kind': {
+                        'type': 'string',
+                        'const': object_key,
+                    },
+                    'data': json_schema,
+                },
+                'required': ['kind', 'data'],
+                'additionalProperties': False,
+            }
+            if title:
+                discriminated_json_schema['title'] = title
+            if description:
+                discriminated_json_schema['description'] = description
+
+            discriminated_json_schemas.append(discriminated_json_schema)
+
+        json_schema = {
+            'type': 'object',
+            'properties': {
+                'result': {
+                    'anyOf': discriminated_json_schemas,
+                }
+            },
+            'required': ['result'],
+            'additionalProperties': False,
+        }
+        if all_defs:
+            json_schema['$defs'] = all_defs
+
+        self.object_def = OutputObjectDefinition(
+            json_schema=json_schema,
+            strict=strict,
+            name=name,
+            description=description,
+        )
+
+    async def process(
+        self,
+        data: str | dict[str, Any] | None,
+        run_context: RunContext[AgentDepsT],
+        allow_partial: bool = False,
+        wrap_validation_errors: bool = True,
+    ) -> OutputDataT:
+        union_object = await self._union_schema.process(
+            data, run_context, allow_partial=allow_partial, wrap_validation_errors=wrap_validation_errors
+        )
+
+        result = union_object.result
+        kind = result.kind
+        data = result.data
+        try:
+            object_schema = self._object_schemas[kind]
+        except KeyError as e:
+            if wrap_validation_errors:
+                m = _messages.RetryPromptPart(content=f'Invalid kind: {kind}')
+                raise ToolRetryError(m) from e
+            else:
+                raise  # pragma: lax no cover
+
+        return await object_schema.process(
+            data, run_context, allow_partial=allow_partial, wrap_validation_errors=wrap_validation_errors
+        )
+
+
+@dataclass(init=False)
+class PlainTextOutputProcessor(BaseOutputProcessor[OutputDataT]):
     _function_schema: _function_schema.FunctionSchema
     _str_argument_name: str
 
@@ -758,10 +954,10 @@ class OutputFunctionSchema(Generic[OutputDataT]):
 
 @dataclass(init=False)
 class OutputTool(Generic[OutputDataT]):
-    parameters_schema: OutputObjectSchema[OutputDataT]
+    parameters_schema: ObjectOutputProcessor[OutputDataT]
     tool_def: ToolDefinition
 
-    def __init__(self, *, name: str, parameters_schema: OutputObjectSchema[OutputDataT], multiple: bool):
+    def __init__(self, *, name: str, parameters_schema: ObjectOutputProcessor[OutputDataT], multiple: bool):
         self.parameters_schema = parameters_schema
         definition = parameters_schema.object_def
 

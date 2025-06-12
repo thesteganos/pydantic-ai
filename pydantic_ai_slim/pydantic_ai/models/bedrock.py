@@ -378,7 +378,7 @@ class BedrockConverseModel(Model):
             return None
 
         tool_choice: ToolChoiceTypeDef
-        if model_request_parameters.output_mode == 'tool':
+        if not model_request_parameters.allow_text_output:
             tool_choice = {'any': {}}
         else:
             tool_choice = {'auto': {}}

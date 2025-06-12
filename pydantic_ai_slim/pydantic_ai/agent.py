@@ -141,7 +141,7 @@ class Agent(Generic[AgentDepsT, OutputDataT]):
     _deps_type: type[AgentDepsT] = dataclasses.field(repr=False)
     _deprecated_result_tool_name: str | None = dataclasses.field(repr=False)
     _deprecated_result_tool_description: str | None = dataclasses.field(repr=False)
-    _output_schema: _output.OutputSchema[OutputDataT] = dataclasses.field(repr=False)
+    _output_schema: _output.BaseOutputSchema[OutputDataT] = dataclasses.field(repr=False)
     _output_validators: list[_output.OutputValidator[AgentDepsT, OutputDataT]] = dataclasses.field(repr=False)
     _instructions: str | None = dataclasses.field(repr=False)
     _instructions_functions: list[_system_prompt.SystemPromptRunner[AgentDepsT]] = dataclasses.field(repr=False)
@@ -318,8 +318,10 @@ class Agent(Generic[AgentDepsT, OutputDataT]):
             warnings.warn('`result_retries` is deprecated, use `max_result_retries` instead', DeprecationWarning)
             output_retries = result_retries
 
-        self._output_schema = _output.OutputSchema[OutputDataT](
+        default_output_mode = self.model.profile.default_output_mode if isinstance(self.model, models.Model) else None
+        self._output_schema = _output.OutputSchema[OutputDataT].build(
             output_type,
+            default_mode=default_output_mode,
             name=self._deprecated_result_tool_name,
             description=self._deprecated_result_tool_description,
         )
@@ -674,12 +676,10 @@ class Agent(Generic[AgentDepsT, OutputDataT]):
                 *[await func.run(run_context) for func in self._instructions_functions],
             ]
 
-            if (
-                output_schema.mode == 'prompted_json'
-                and (output_object_schema := output_schema.text_output_schema)
-                and (object_def := output_object_schema.object_def)
-            ):
-                parts.append(object_def.instructions)
+            if isinstance(output_schema, _output.PromptedJsonOutputSchema):
+                template = model_used.profile.prompted_json_output_instructions
+                instructions = output_schema.instructions(template)
+                parts.append(instructions)
 
             parts = [p for p in parts if p]
             if not parts:
@@ -1004,10 +1004,13 @@ class Agent(Generic[AgentDepsT, OutputDataT]):
                             async for maybe_part_event in streamed_response:
                                 if isinstance(maybe_part_event, _messages.PartStartEvent):
                                     new_part = maybe_part_event.part
-                                    if isinstance(new_part, _messages.TextPart):
-                                        if output_schema.allow_text_output:
-                                            return FinalResult(s, None, None)
-                                    elif isinstance(new_part, _messages.ToolCallPart):  # pragma: no branch
+                                    if isinstance(new_part, _messages.TextPart) and isinstance(
+                                        output_schema, _output.TextOutputSchema
+                                    ):
+                                        return FinalResult(s, None, None)
+                                    elif isinstance(new_part, _messages.ToolCallPart) and isinstance(
+                                        output_schema, _output.ToolOutputSchema
+                                    ):  # pragma: no branch
                                         for call, _ in output_schema.find_tool([new_part]):
                                             return FinalResult(s, call.tool_name, call.tool_call_id)
                             return None
@@ -1644,17 +1647,16 @@ class Agent(Generic[AgentDepsT, OutputDataT]):
         if output_type is not None:
             if self._output_validators:
                 raise exceptions.UserError('Cannot set a custom run `output_type` when the agent has output validators')
-            schema = _output.OutputSchema[RunOutputDataT](
+            schema = _output.OutputSchema[RunOutputDataT].build(
                 output_type,
                 name=self._deprecated_result_tool_name,
                 description=self._deprecated_result_tool_description,
+                default_mode=model_profile.default_output_mode,
             )
         else:
-            schema = self._output_schema
+            schema = self._output_schema.with_default_mode(model_profile.default_output_mode)
 
-        if schema.mode is None:
-            schema.mode = model_profile.default_output_mode
-        if not schema.is_mode_supported(model_profile):
+        if not schema.is_supported(model_profile.output_modes):
             modes = ', '.join(f"'{m}'" for m in model_profile.output_modes)
             raise exceptions.UserError(f"Output mode '{schema.mode}' is not among supported modes: {modes}")
 

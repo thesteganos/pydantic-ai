@@ -260,14 +260,12 @@ async def _prepare_request_parameters(
         function_tool_defs = await ctx.deps.prepare_tools(run_context, function_tool_defs) or []
 
     output_schema = ctx.deps.output_schema
-    assert output_schema.mode is not None  # Should have been set in agent._prepare_output_schema
-
     return models.ModelRequestParameters(
         function_tools=function_tool_defs,
         output_mode=output_schema.mode,
-        output_object=output_schema.text_output_schema.object_def if output_schema.text_output_schema else None,
-        output_tools=output_schema.tool_defs(),
-        allow_text_output=output_schema.allow_text_output == 'plain',
+        output_object=output_schema.object_def if isinstance(output_schema, _output.JsonTextOutputSchema) else None,
+        output_tools=output_schema.tool_defs() if isinstance(output_schema, _output.ToolOutputSchema) else [],
+        allow_text_output=isinstance(output_schema, _output.TextOutputSchema),
     )
 
 
@@ -452,7 +450,7 @@ class CallToolsNode(AgentNode[DepsT, NodeRunEndT]):
                     # when the model has already returned text along side tool calls
                     # in this scenario, if text responses are allowed, we return text from the most recent model
                     # response, if any
-                    if ctx.deps.output_schema.allow_text_output:
+                    if isinstance(ctx.deps.output_schema, _output.TextOutputSchema):
                         for message in reversed(ctx.state.message_history):
                             if isinstance(message, _messages.ModelResponse):
                                 last_texts = [p.content for p in message.parts if isinstance(p, _messages.TextPart)]
@@ -475,21 +473,23 @@ class CallToolsNode(AgentNode[DepsT, NodeRunEndT]):
         output_schema = ctx.deps.output_schema
         run_context = build_run_context(ctx)
 
-        # first, look for the output tool call
         final_result: result.FinalResult[NodeRunEndT] | None = None
         parts: list[_messages.ModelRequestPart] = []
-        for call, output_tool in output_schema.find_tool(tool_calls):
-            try:
-                result_data = await output_tool.process(call, run_context)
-                result_data = await _validate_output(result_data, ctx, call)
-            except _output.ToolRetryError as e:
-                # TODO: Should only increment retry stuff once per node execution, not for each tool call
-                #   Also, should increment the tool-specific retry count rather than the run retry count
-                ctx.state.increment_retries(ctx.deps.max_result_retries, e)
-                parts.append(e.tool_retry)
-            else:
-                final_result = result.FinalResult(result_data, call.tool_name, call.tool_call_id)
-                break
+
+        # first, look for the output tool call
+        if isinstance(output_schema, _output.ToolOutputSchema):
+            for call, output_tool in output_schema.find_tool(tool_calls):
+                try:
+                    result_data = await output_tool.process(call, run_context)
+                    result_data = await _validate_output(result_data, ctx, call)
+                except _output.ToolRetryError as e:
+                    # TODO: Should only increment retry stuff once per node execution, not for each tool call
+                    #   Also, should increment the tool-specific retry count rather than the run retry count
+                    ctx.state.increment_retries(ctx.deps.max_result_retries, e)
+                    parts.append(e.tool_retry)
+                else:
+                    final_result = result.FinalResult(result_data, call.tool_name, call.tool_call_id)
+                    break
 
         # Then build the other request parts based on end strategy
         tool_responses: list[_messages.ModelRequestPart] = self._tool_responses
@@ -535,7 +535,7 @@ class CallToolsNode(AgentNode[DepsT, NodeRunEndT]):
 
         text = '\n\n'.join(texts)
         try:
-            if output_schema.allow_text_output:
+            if isinstance(output_schema, _output.TextOutputSchema):
                 run_context = build_run_context(ctx)
                 result_data = await output_schema.process(text, run_context)
             else:
@@ -765,7 +765,10 @@ def _unknown_tool(
 ) -> _messages.RetryPromptPart:
     ctx.state.increment_retries(ctx.deps.max_result_retries)
     tool_names = list(ctx.deps.function_tools.keys())
-    tool_names.extend(ctx.deps.output_schema.tool_names())
+
+    output_schema = ctx.deps.output_schema
+    if isinstance(output_schema, _output.ToolOutputSchema):
+        tool_names.extend(output_schema.tool_names())
 
     if tool_names:
         msg = f'Available tools: {", ".join(tool_names)}'

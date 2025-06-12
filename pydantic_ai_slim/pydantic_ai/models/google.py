@@ -215,7 +215,7 @@ class GoogleModel(Model):
     def _get_tool_config(
         self, model_request_parameters: ModelRequestParameters, tools: list[ToolDict] | None
     ) -> ToolConfigDict | None:
-        if model_request_parameters.output_mode == 'tool' and tools:
+        if not model_request_parameters.allow_text_output and tools:
             names: list[str] = []
             for tool in tools:
                 for function_declaration in tool.get('function_declarations') or []:

@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Generic
 
 from pydantic import ValidationError
-from typing_extensions import TypeVar, assert_type, deprecated, overload
+from typing_extensions import TypeVar, deprecated, overload
 
 from . import _utils, exceptions, messages as _messages, models
 from ._output import (
@@ -18,9 +18,12 @@ from ._output import (
     OutputSchema,
     OutputValidator,
     OutputValidatorFunc,
+    PlainTextOutputSchema,
     PromptedJsonOutput,
     TextOutput,
+    TextOutputSchema,
     ToolOutput,
+    ToolOutputSchema,
 )
 from .messages import AgentStreamEvent, FinalResultEvent
 from .tools import AgentDepsT, RunContext
@@ -92,7 +95,7 @@ class AgentStream(Generic[AgentDepsT, OutputDataT]):
     ) -> OutputDataT:
         """Validate a structured result message."""
         call = None
-        if output_tool_name is not None:
+        if isinstance(self._output_schema, ToolOutputSchema) and output_tool_name is not None:
             match = self._output_schema.find_named_tool(message.parts, output_tool_name)
             if match is None:
                 raise exceptions.UnexpectedModelBehavior(  # pragma: no cover
@@ -103,11 +106,15 @@ class AgentStream(Generic[AgentDepsT, OutputDataT]):
             result_data = await output_tool.process(
                 call, self._run_ctx, allow_partial=allow_partial, wrap_validation_errors=False
             )
-        else:
+        elif isinstance(self._output_schema, TextOutputSchema):
             text = '\n\n'.join(x.content for x in message.parts if isinstance(x, _messages.TextPart))
 
             result_data = await self._output_schema.process(
                 text, self._run_ctx, allow_partial=allow_partial, wrap_validation_errors=False
+            )
+        else:
+            raise exceptions.UnexpectedModelBehavior(  # pragma: no cover
+                'Invalid response, unable to process text output'
             )
 
         for validator in self._output_validators:
@@ -131,11 +138,12 @@ class AgentStream(Generic[AgentDepsT, OutputDataT]):
                 """Return an appropriate FinalResultEvent if `e` corresponds to a part that will produce a final result."""
                 if isinstance(e, _messages.PartStartEvent):
                     new_part = e.part
-                    if isinstance(new_part, _messages.ToolCallPart):
+                    if isinstance(new_part, _messages.ToolCallPart) and isinstance(output_schema, ToolOutputSchema):
                         for call, _ in output_schema.find_tool([new_part]):  # pragma: no branch
                             return _messages.FinalResultEvent(tool_name=call.tool_name, tool_call_id=call.tool_call_id)
-                    elif output_schema.allow_text_output:  # pragma: no branch
-                        assert_type(e, _messages.PartStartEvent)
+                    elif isinstance(new_part, _messages.TextPart) and isinstance(
+                        output_schema, TextOutputSchema
+                    ):  # pragma: no branch
                         return _messages.FinalResultEvent(tool_name=None, tool_call_id=None)
 
             usage_checking_stream = _get_usage_checking_stream_response(
@@ -326,7 +334,7 @@ class StreamedRunResult(Generic[AgentDepsT, OutputDataT]):
                 Debouncing is particularly important for long structured responses to reduce the overhead of
                 performing validation as each token is received.
         """
-        if self._output_schema.allow_text_output != 'plain':
+        if not isinstance(self._output_schema, PlainTextOutputSchema):
             raise exceptions.UserError('stream_text() can only be used with text responses')
 
         if delta:
@@ -405,7 +413,7 @@ class StreamedRunResult(Generic[AgentDepsT, OutputDataT]):
     ) -> OutputDataT:
         """Validate a structured result message."""
         call = None
-        if self._output_tool_name is not None:
+        if isinstance(self._output_schema, ToolOutputSchema) and self._output_tool_name is not None:
             match = self._output_schema.find_named_tool(message.parts, self._output_tool_name)
             if match is None:
                 raise exceptions.UnexpectedModelBehavior(  # pragma: no cover
@@ -416,11 +424,15 @@ class StreamedRunResult(Generic[AgentDepsT, OutputDataT]):
             result_data = await output_tool.process(
                 call, self._run_ctx, allow_partial=allow_partial, wrap_validation_errors=False
             )
-        else:
+        elif isinstance(self._output_schema, TextOutputSchema):
             text = '\n\n'.join(x.content for x in message.parts if isinstance(x, _messages.TextPart))
 
             result_data = await self._output_schema.process(
                 text, self._run_ctx, allow_partial=allow_partial, wrap_validation_errors=False
+            )
+        else:
+            raise exceptions.UnexpectedModelBehavior(  # pragma: no cover
+                'Invalid response, unable to process text output'
             )
 
         for validator in self._output_validators:

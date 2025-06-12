@@ -266,7 +266,7 @@ class OpenAIModel(Model):
         tools = self._get_tools(model_request_parameters)
         if not tools:
             tool_choice: Literal['none', 'required', 'auto'] | None = None
-        elif model_request_parameters.output_mode == 'tool':
+        elif not model_request_parameters.allow_text_output:
             tool_choice = 'required'
         else:
             tool_choice = 'auto'
@@ -674,7 +674,7 @@ class OpenAIResponsesModel(Model):
 
         if not tools:
             tool_choice: Literal['none', 'required', 'auto'] | None = None
-        elif model_request_parameters.output_mode == 'tool':
+        elif not model_request_parameters.allow_text_output:
             tool_choice = 'required'
         else:
             tool_choice = 'auto'

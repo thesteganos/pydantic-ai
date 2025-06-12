@@ -1,9 +1,12 @@
 from __future__ import annotations as _annotations
 
 from dataclasses import dataclass, field, fields, replace
-from typing import Callable, Literal, Union
+from textwrap import dedent
+from typing import Callable, Union
 
 from typing_extensions import Self
+
+from pydantic_ai._output import StructuredOutputMode, SupportableOutputMode
 
 from ._json_schema import JsonSchemaTransformer
 
@@ -14,10 +17,21 @@ class ModelProfile:
 
     json_schema_transformer: type[JsonSchemaTransformer] | None = None
     """The transformer to use to make JSON schemas for tools and structured output compatible with the model."""
-    output_modes: set[Literal['tool', 'json_schema']] = field(default_factory=lambda: {'tool'})
+    output_modes: set[SupportableOutputMode] = field(default_factory=lambda: {'tool'})
     """The output modes supported by the model. Essentially all models support `tool` mode, but some also support `json_schema` mode, which needs to be specifically implemented on the model class."""
-    default_output_mode: Literal['tool', 'json_schema', 'prompted_json'] = 'tool'
+    default_output_mode: StructuredOutputMode = 'tool'
     """The default output mode to use for the model."""
+
+    prompted_json_output_instructions: str = dedent(
+        """
+        Always respond with a JSON object that's compatible with this schema:
+
+        {schema}
+
+        Don't include any text or Markdown fencing before or after.
+        """
+    )
+    """The instructions to use for prompted JSON output. The schema placeholder will be replaced with the JSON schema for the output."""
 
     @classmethod
     def from_profile(cls, profile: ModelProfile | None) -> Self:

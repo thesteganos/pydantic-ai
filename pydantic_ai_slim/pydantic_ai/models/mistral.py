@@ -287,7 +287,7 @@ class MistralModel(Model):
         """
         if not model_request_parameters.function_tools and not model_request_parameters.output_tools:
             return None
-        elif model_request_parameters.output_mode == 'tool':
+        elif not model_request_parameters.allow_text_output:
             return 'required'
         else:
             return 'auto'

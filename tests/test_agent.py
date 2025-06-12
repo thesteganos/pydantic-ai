@@ -13,7 +13,15 @@ from pydantic_core import to_json
 from typing_extensions import Self
 
 from pydantic_ai import Agent, ModelRetry, RunContext, UnexpectedModelBehavior, UserError, capture_run_messages
-from pydantic_ai._output import JsonSchemaOutput, OutputSpec, PromptedJsonOutput, TextOutput, ToolOutput
+from pydantic_ai._output import (
+    JsonSchemaOutput,
+    OutputSpec,
+    PromptedJsonOutput,
+    TextOutput,
+    TextOutputSchema,
+    ToolOutput,
+    ToolOutputSchema,
+)
 from pydantic_ai.agent import AgentRunResult
 from pydantic_ai.messages import (
     BinaryContent,
@@ -355,7 +363,7 @@ def test_response_tuple():
     m = TestModel()
 
     agent = Agent(m, output_type=tuple[str, str])
-    assert agent._output_schema.allow_text_output == 'json'  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(agent._output_schema, ToolOutputSchema)  # pyright: ignore[reportPrivateUsage]
 
     result = agent.run_sync('Hello')
     assert result.output == snapshot(('a', 'a'))
@@ -430,7 +438,7 @@ def test_response_union_allow_str(input_union_callable: Callable[[], Any]):
         got_tool_call_name = ctx.tool_name
         return o
 
-    assert agent._output_schema.allow_text_output == 'plain'  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(agent._output_schema, TextOutputSchema)  # pyright: ignore[reportPrivateUsage]
 
     result = agent.run_sync('Hello')
     assert isinstance(result.output, str)
