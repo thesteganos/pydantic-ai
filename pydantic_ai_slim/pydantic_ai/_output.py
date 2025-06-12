@@ -2,7 +2,6 @@ from __future__ import annotations as _annotations
 
 import inspect
 import json
-import re
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
@@ -116,7 +115,7 @@ class ToolRetryError(Exception):
 class ToolOutput(Generic[OutputDataT]):
     """Marker class to use tools for outputs, and customize the tool."""
 
-    output_type: OutputTypeOrFunction[OutputDataT]
+    output: OutputTypeOrFunction[OutputDataT]
     name: str | None
     description: str | None
     max_retries: int | None
@@ -131,7 +130,7 @@ class ToolOutput(Generic[OutputDataT]):
         max_retries: int | None = None,
         strict: bool | None = None,
     ):
-        self.output_type = type_
+        self.output = type_
         self.name = name
         self.description = description
         self.max_retries = max_retries
@@ -288,7 +287,7 @@ class OutputSchema(BaseOutputSchema[OutputDataT], ABC):
 
         if isinstance(output_spec, JsonSchemaOutput):
             return JsonSchemaOutputSchema(
-                text_processor=cls._build_text_processor(
+                cls._build_processor(
                     output_spec.outputs,
                     name=output_spec.name,
                     description=output_spec.description,
@@ -298,9 +297,7 @@ class OutputSchema(BaseOutputSchema[OutputDataT], ABC):
 
         if isinstance(output_spec, PromptedJsonOutput):
             return PromptedJsonOutputSchema(
-                text_processor=cls._build_text_processor(
-                    output_spec.outputs, name=output_spec.name, description=output_spec.description
-                ),
+                cls._build_processor(output_spec.outputs, name=output_spec.name, description=output_spec.description),
             )
 
         text_outputs: Sequence[type[str] | TextOutput[OutputDataT]] = []
@@ -328,18 +325,16 @@ class OutputSchema(BaseOutputSchema[OutputDataT], ABC):
                 text_output_schema = PlainTextOutputProcessor(text_output.output_function)
 
             if len(tools) == 0:
-                return PlainTextOutputSchema(text_processor=text_output_schema)
+                return PlainTextOutputSchema(text_output_schema)
             else:
-                return ToolOrTextOutputSchema(text_processor=text_output_schema, tools=tools)
+                return ToolOrTextOutputSchema(processor=text_output_schema, tools=tools)
 
         if len(tool_outputs) > 0:
-            return ToolOutputSchema(tools=tools)
+            return ToolOutputSchema(tools)
 
         if len(other_outputs) > 0:
             schema = OutputSchemaWithoutMode(
-                text_processor=cls._build_text_processor(
-                    other_outputs, name=name, description=description, strict=strict
-                ),
+                processor=cls._build_processor(other_outputs, name=name, description=description, strict=strict),
                 tools=tools,
             )
             if default_mode:
@@ -367,18 +362,17 @@ class OutputSchema(BaseOutputSchema[OutputDataT], ABC):
             description = None
             strict = None
             if isinstance(output, ToolOutput):
-                output_type = output.output_type
                 # do we need to error on conflicts here? (DavidM): If this is internal maybe doesn't matter, if public, use overloads
                 name = output.name
                 description = output.description
                 strict = output.strict
-            else:
-                output_type = output
+
+                output = output.output
 
             if name is None:
                 name = default_name
                 if multiple:
-                    name += f'_{output_type.__name__}'
+                    name += f'_{output.__name__}'
 
             i = 1
             original_name = name
@@ -390,13 +384,13 @@ class OutputSchema(BaseOutputSchema[OutputDataT], ABC):
             if strict is None:
                 strict = default_strict
 
-            parameters_schema = ObjectOutputProcessor(output=output_type, description=description, strict=strict)
-            tools[name] = OutputTool(name=name, parameters_schema=parameters_schema, multiple=multiple)
+            processor = ObjectOutputProcessor(output=output, description=description, strict=strict)
+            tools[name] = OutputTool(name=name, processor=processor, multiple=multiple)
 
         return tools
 
     @staticmethod
-    def _build_text_processor(
+    def _build_processor(
         outputs: Sequence[OutputTypeOrFunction[OutputDataT]],
         name: str | None = None,
         description: str | None = None,
@@ -419,15 +413,15 @@ class OutputSchema(BaseOutputSchema[OutputDataT], ABC):
 
 @dataclass(init=False)
 class OutputSchemaWithoutMode(BaseOutputSchema[OutputDataT]):
-    text_processor: ObjectOutputProcessor[OutputDataT] | UnionOutputProcessor[OutputDataT]
+    processor: ObjectOutputProcessor[OutputDataT] | UnionOutputProcessor[OutputDataT]
     _tools: dict[str, OutputTool[OutputDataT]] = field(default_factory=dict)
 
     def __init__(
         self,
-        text_processor: ObjectOutputProcessor[OutputDataT] | UnionOutputProcessor[OutputDataT],
+        processor: ObjectOutputProcessor[OutputDataT] | UnionOutputProcessor[OutputDataT],
         tools: dict[str, OutputTool[OutputDataT]],
     ):
-        self.text_processor = text_processor
+        self.processor = processor
         self._tools = tools
 
     @property
@@ -437,11 +431,11 @@ class OutputSchemaWithoutMode(BaseOutputSchema[OutputDataT]):
     def with_default_mode(self, mode: StructuredOutputMode) -> OutputSchema[OutputDataT]:
         if mode == 'json_schema':
             return JsonSchemaOutputSchema(
-                text_processor=self.text_processor,
+                self.processor,
             )
         elif mode == 'prompted_json':
             return PromptedJsonOutputSchema(
-                text_processor=self.text_processor,
+                self.processor,
             )
         elif mode == 'tool':
             return ToolOutputSchema(tools=self.tools)
@@ -474,7 +468,7 @@ class TextOutputSchema(OutputSchema[OutputDataT], ABC):
 
 @dataclass
 class PlainTextOutputSchema(TextOutputSchema[OutputDataT]):
-    text_processor: PlainTextOutputProcessor[OutputDataT] | None = None
+    processor: PlainTextOutputProcessor[OutputDataT] | None = None
 
     @property
     def mode(self) -> OutputMode:
@@ -502,21 +496,21 @@ class PlainTextOutputSchema(TextOutputSchema[OutputDataT]):
         Returns:
             Either the validated output data (left) or a retry message (right).
         """
-        if self.text_processor is None:
+        if self.processor is None:
             return cast(OutputDataT, text)
 
-        return await self.text_processor.process(
+        return await self.processor.process(
             text, run_context, allow_partial=allow_partial, wrap_validation_errors=wrap_validation_errors
         )
 
 
 @dataclass
 class JsonTextOutputSchema(TextOutputSchema[OutputDataT], ABC):
-    text_processor: ObjectOutputProcessor[OutputDataT] | UnionOutputProcessor[OutputDataT]
+    processor: ObjectOutputProcessor[OutputDataT] | UnionOutputProcessor[OutputDataT]
 
     @property
     def object_def(self) -> OutputObjectDefinition:
-        return self.text_processor.object_def
+        return self.processor.object_def
 
     async def process(
         self,
@@ -536,21 +530,9 @@ class JsonTextOutputSchema(TextOutputSchema[OutputDataT], ABC):
         Returns:
             Either the validated output data (left) or a retry message (right).
         """
+        text = _utils.strip_markdown_fences(text)
 
-        def strip_markdown_fences(text: str) -> str:
-            if text.startswith('{'):
-                return text
-
-            regex = r'```(?:\w+)?\n(\{.*\})\n```'
-            match = re.search(regex, text, re.DOTALL)
-            if match:
-                return match.group(1)
-
-            return text
-
-        text = strip_markdown_fences(text)
-
-        return await self.text_processor.process(
+        return await self.processor.process(
             text, run_context, allow_partial=allow_partial, wrap_validation_errors=wrap_validation_errors
         )
 
@@ -638,10 +620,10 @@ class ToolOutputSchema(OutputSchema[OutputDataT]):
 class ToolOrTextOutputSchema(PlainTextOutputSchema[OutputDataT], ToolOutputSchema[OutputDataT]):
     def __init__(
         self,
-        text_processor: PlainTextOutputProcessor[OutputDataT] | None,
+        processor: PlainTextOutputProcessor[OutputDataT] | None,
         tools: dict[str, OutputTool[OutputDataT]],
     ):
-        self.text_processor = text_processor
+        self.processor = processor
         self._tools = tools
 
     @property
@@ -795,8 +777,8 @@ class UnionOutputModel:
 @dataclass(init=False)
 class UnionOutputProcessor(BaseOutputProcessor[OutputDataT]):
     object_def: OutputObjectDefinition
-    _union_schema: ObjectOutputProcessor[UnionOutputModel]
-    _object_schemas: dict[str, ObjectOutputProcessor[OutputDataT]]
+    _union_processor: ObjectOutputProcessor[UnionOutputModel]
+    _processors: dict[str, ObjectOutputProcessor[OutputDataT]]
 
     def __init__(
         self,
@@ -806,35 +788,35 @@ class UnionOutputProcessor(BaseOutputProcessor[OutputDataT]):
         description: str | None = None,
         strict: bool | None = None,
     ):
-        self._union_schema = ObjectOutputProcessor(output=UnionOutputModel)
+        self._union_processor = ObjectOutputProcessor(output=UnionOutputModel)
 
         json_schemas: list[ObjectJsonSchema] = []
-        self._object_schemas = {}
+        self._processors = {}
         for output in outputs:
-            object_schema = ObjectOutputProcessor(output=output, strict=strict)
-            object_def = object_schema.object_def
+            processor = ObjectOutputProcessor(output=output, strict=strict)
+            object_def = processor.object_def
 
             object_key = object_def.name or output.__name__
             i = 1
             original_key = object_key
-            while object_key in self._object_schemas:
+            while object_key in self._processors:
                 i += 1
                 object_key = f'{original_key}_{i}'
 
-            self._object_schemas[object_key] = object_schema
+            self._processors[object_key] = processor
 
             json_schema = object_def.json_schema
-            if object_name := object_def.name:
-                json_schema['title'] = object_name
-            if object_description := object_def.description:
-                json_schema['description'] = object_description
+            if object_def.name:
+                json_schema['title'] = object_def.name
+            if object_def.description:
+                json_schema['description'] = object_def.description
 
             json_schemas.append(json_schema)
 
         json_schemas, all_defs = _utils.merge_json_schema_defs(json_schemas)
 
         discriminated_json_schemas: list[ObjectJsonSchema] = []
-        for object_key, json_schema in zip(self._object_schemas.keys(), json_schemas):
+        for object_key, json_schema in zip(self._processors.keys(), json_schemas):
             title = json_schema.pop('title', None)
             description = json_schema.pop('description', None)
 
@@ -884,7 +866,7 @@ class UnionOutputProcessor(BaseOutputProcessor[OutputDataT]):
         allow_partial: bool = False,
         wrap_validation_errors: bool = True,
     ) -> OutputDataT:
-        union_object = await self._union_schema.process(
+        union_object = await self._union_processor.process(
             data, run_context, allow_partial=allow_partial, wrap_validation_errors=wrap_validation_errors
         )
 
@@ -892,7 +874,7 @@ class UnionOutputProcessor(BaseOutputProcessor[OutputDataT]):
         kind = result.kind
         data = result.data
         try:
-            object_schema = self._object_schemas[kind]
+            processor = self._processors[kind]
         except KeyError as e:
             if wrap_validation_errors:
                 m = _messages.RetryPromptPart(content=f'Invalid kind: {kind}')
@@ -900,7 +882,7 @@ class UnionOutputProcessor(BaseOutputProcessor[OutputDataT]):
             else:
                 raise  # pragma: lax no cover
 
-        return await object_schema.process(
+        return await processor.process(
             data, run_context, allow_partial=allow_partial, wrap_validation_errors=wrap_validation_errors
         )
 
@@ -954,25 +936,25 @@ class PlainTextOutputProcessor(BaseOutputProcessor[OutputDataT]):
 
 @dataclass(init=False)
 class OutputTool(Generic[OutputDataT]):
-    parameters_schema: ObjectOutputProcessor[OutputDataT]
+    processor: ObjectOutputProcessor[OutputDataT]
     tool_def: ToolDefinition
 
-    def __init__(self, *, name: str, parameters_schema: ObjectOutputProcessor[OutputDataT], multiple: bool):
-        self.parameters_schema = parameters_schema
-        definition = parameters_schema.object_def
+    def __init__(self, *, name: str, processor: ObjectOutputProcessor[OutputDataT], multiple: bool):
+        self.processor = processor
+        object_def = processor.object_def
 
-        description = definition.description
+        description = object_def.description
         if not description:
             description = DEFAULT_OUTPUT_TOOL_DESCRIPTION
             if multiple:
-                description = f'{definition.name}: {description}'
+                description = f'{object_def.name}: {description}'
 
         self.tool_def = ToolDefinition(
             name=name,
             description=description,
-            parameters_json_schema=definition.json_schema,
-            strict=definition.strict,
-            outer_typed_dict_key=parameters_schema.outer_typed_dict_key,
+            parameters_json_schema=object_def.json_schema,
+            strict=object_def.strict,
+            outer_typed_dict_key=processor.outer_typed_dict_key,
         )
 
     async def process(
@@ -994,7 +976,7 @@ class OutputTool(Generic[OutputDataT]):
             Either the validated output data (left) or a retry message (right).
         """
         try:
-            output = await self.parameters_schema.process(
+            output = await self.processor.process(
                 tool_call.args, run_context, allow_partial=allow_partial, wrap_validation_errors=False
             )
         except ValidationError as e:

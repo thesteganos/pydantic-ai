@@ -1,6 +1,7 @@
 from __future__ import annotations as _annotations
 
 import asyncio
+import re
 import time
 import uuid
 from collections.abc import AsyncIterable, AsyncIterator, Iterator
@@ -381,3 +382,15 @@ def merge_json_schema_defs(schemas: list[dict[str, Any]]) -> tuple[list[dict[str
         rewritten_schemas.append(schema)
 
     return rewritten_schemas, all_defs
+
+
+def strip_markdown_fences(text: str) -> str:
+    if text.startswith('{'):
+        return text
+
+    regex = r'```(?:\w+)?\n(\{.*\})\n```'
+    match = re.search(regex, text, re.DOTALL)
+    if match:
+        return match.group(1)
+
+    return text
