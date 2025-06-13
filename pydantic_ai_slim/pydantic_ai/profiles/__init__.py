@@ -11,7 +11,7 @@ from pydantic_ai._output import StructuredOutputMode
 from ._json_schema import JsonSchemaTransformer
 
 
-@dataclass(kw_only=True)
+@dataclass
 class ModelProfile:
     """Describes how requests to a specific model or family of models need to be constructed to get the best results, independent of the model and provider classes used."""
 
