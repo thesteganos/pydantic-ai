@@ -284,7 +284,7 @@ class OpenAIModel(Model):
         if model_request_parameters.output_mode == 'structured_text':
             if output_object := model_request_parameters.output_object:
                 response_format = self._map_json_schema(output_object)
-            elif self.profile.supports_json_object_response_format:
+            elif self.profile.supports_json_object_response_format:  # pragma: no branch
                 response_format = {'type': 'json_object'}
 
         sampling_settings = (
@@ -701,7 +701,7 @@ class OpenAIResponsesModel(Model):
         if model_request_parameters.output_mode == 'structured_text':
             if output_object := model_request_parameters.output_object:
                 text = {'format': self._map_json_schema(output_object)}
-            elif self.profile.supports_json_object_response_format:
+            elif self.profile.supports_json_object_response_format:  # pragma: no branch
                 text = {'format': {'type': 'json_object'}}
 
                 # Without this trick, we'd hit this error:

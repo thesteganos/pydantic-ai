@@ -724,8 +724,6 @@ def _customize_tool_def(transformer: type[JsonSchemaTransformer], t: ToolDefinit
 
 
 def _customize_output_object(transformer: type[JsonSchemaTransformer], o: OutputObjectDefinition):
-    schema_transformer = transformer(o.json_schema, strict=o.strict)
+    schema_transformer = transformer(o.json_schema, strict=True)
     son_schema = schema_transformer.walk()
-    if o.strict is None:
-        o = replace(o, strict=schema_transformer.is_strict_compatible)
     return replace(o, json_schema=son_schema)

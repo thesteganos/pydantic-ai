@@ -12,7 +12,7 @@ from dataclasses import dataclass, fields, is_dataclass
 from datetime import datetime, timezone
 from functools import partial
 from types import GenericAlias
-from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, Union, cast, overload
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, Union, overload
 
 from anyio.to_thread import run_sync
 from pydantic import BaseModel, TypeAdapter
@@ -341,11 +341,9 @@ def _update_mapped_json_schema_refs(s: dict[str, Any], name_mapping: dict[str, s
 
     # Recursively update refs in properties
     if 'properties' in s:
-        props: dict[str, Any] = s['properties']
+        props: dict[str, dict[str, Any]] = s['properties']
         for prop in props.values():
-            if isinstance(prop, dict):
-                prop = cast(dict[str, Any], prop)
-                _update_mapped_json_schema_refs(prop, name_mapping)
+            _update_mapped_json_schema_refs(prop, name_mapping)
 
     # Handle arrays
     if 'items' in s and isinstance(s['items'], dict):
@@ -354,16 +352,14 @@ def _update_mapped_json_schema_refs(s: dict[str, Any], name_mapping: dict[str, s
     if 'prefixItems' in s:
         prefix_items: list[dict[str, Any]] = s['prefixItems']
         for item in prefix_items:
-            if isinstance(item, dict):
-                _update_mapped_json_schema_refs(item, name_mapping)
+            _update_mapped_json_schema_refs(item, name_mapping)
 
     # Handle unions
     for union_type in ['anyOf', 'oneOf']:
         if union_type in s:
             union_items: list[dict[str, Any]] = s[union_type]
             for item in union_items:
-                if isinstance(item, dict):
-                    _update_mapped_json_schema_refs(item, name_mapping)
+                _update_mapped_json_schema_refs(item, name_mapping)
 
 
 def merge_json_schema_defs(schemas: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:

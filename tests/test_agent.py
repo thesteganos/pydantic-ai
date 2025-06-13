@@ -1262,6 +1262,28 @@ def test_output_type_multiple_custom_tools():
     )
 
 
+def test_default_structured_output_mode():
+    def hello(_: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[TextPart(content='hello')])
+
+    tool_model = FunctionModel(hello, profile=ModelProfile(default_structured_output_mode='tool'))
+    structured_text_model = FunctionModel(
+        hello,
+        profile=ModelProfile(
+            supports_json_schema_response_format=True, default_structured_output_mode='structured_text'
+        ),
+    )
+
+    class Foo(BaseModel):
+        bar: str
+
+    tool_agent = Agent(tool_model, output_type=Foo)
+    assert tool_agent._output_schema.mode == 'tool'  # type: ignore[reportPrivateUsage]
+
+    structured_text_agent = Agent(structured_text_model, output_type=Foo)
+    assert structured_text_agent._output_schema.mode == 'structured_text'  # type: ignore[reportPrivateUsage]
+
+
 def test_output_type_structured_text():
     def return_city_location(_: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
         text = CityLocation(city='Mexico City', country='Mexico').model_dump_json()
@@ -1305,6 +1327,45 @@ Don't include any text or Markdown fencing before or after.\
                 parts=[TextPart(content='{"city":"Mexico City","country":"Mexico"}')],
                 usage=Usage(requests=1, request_tokens=56, response_tokens=7, total_tokens=63),
                 model_name='function:return_city_location:',
+                timestamp=IsDatetime(),
+            ),
+        ]
+    )
+
+
+def test_output_type_structured_text_with_custom_instructions():
+    def return_foo(_: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        text = Foo(bar='baz').model_dump_json()
+        return ModelResponse(parts=[TextPart(content=text)])
+
+    m = FunctionModel(return_foo)
+
+    class Foo(BaseModel):
+        bar: str
+
+    agent = Agent(m, output_type=StructuredTextOutput(Foo, instructions='Gimme some JSON:'))
+
+    result = agent.run_sync('What is the capital of Mexico?')
+    assert result.output == snapshot(Foo(bar='baz'))
+    assert result.all_messages() == snapshot(
+        [
+            ModelRequest(
+                parts=[
+                    UserPromptPart(
+                        content='What is the capital of Mexico?',
+                        timestamp=IsDatetime(),
+                    )
+                ],
+                instructions="""\
+Gimme some JSON:
+
+{"properties": {"bar": {"type": "string"}}, "required": ["bar"], "title": "Foo", "type": "object"}\
+""",
+            ),
+            ModelResponse(
+                parts=[TextPart(content='{"bar":"baz"}')],
+                usage=Usage(requests=1, request_tokens=56, response_tokens=4, total_tokens=60),
+                model_name='function:return_foo:',
                 timestamp=IsDatetime(),
             ),
         ]
@@ -3048,7 +3109,17 @@ def test_unsupported_output_mode():
     class Foo(BaseModel):
         bar: str
 
-    agent = Agent('test', output_type=StructuredTextOutput(Foo, instructions=False))
+    def hello(_: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[TextPart('hello')])
+
+    model = FunctionModel(hello, profile=ModelProfile(supports_tools=False, supports_json_schema_response_format=False))
+
+    agent = Agent(model, output_type=StructuredTextOutput(Foo, instructions=False))
 
     with pytest.raises(UserError, match='Structured output without using instructions is not supported by the model.'):
+        agent.run_sync('Hello')
+
+    agent = Agent(model, output_type=ToolOutput(Foo))
+
+    with pytest.raises(UserError, match='Output tools are not supported by the model.'):
         agent.run_sync('Hello')

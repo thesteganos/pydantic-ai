@@ -162,7 +162,6 @@ class StructuredTextOutput(Generic[OutputDataT]):
     """
     name: str | None
     description: str | None
-    strict: bool | None
 
     def __init__(
         self,
@@ -170,13 +169,11 @@ class StructuredTextOutput(Generic[OutputDataT]):
         *,
         name: str | None = None,
         description: str | None = None,
-        strict: bool | None = True,
         instructions: bool | str | None = None,
     ):
         self.outputs = flatten_output_spec(type_)
         self.name = name
         self.description = description
-        self.strict = strict
         self.instructions = instructions
 
 
@@ -271,7 +268,6 @@ class OutputSchema(BaseOutputSchema[OutputDataT], ABC):
                     output_spec.outputs,
                     name=output_spec.name,
                     description=output_spec.description,
-                    strict=output_spec.strict,
                 ),
                 instructions=output_spec.instructions,
             )
@@ -535,7 +531,7 @@ class StructuredTextOutputSchema(TextOutputSchema[OutputDataT]):
             template = self._instructions
 
         if '{schema}' not in template:
-            raise UserError("Structured output instructions template must contain a '{schema}' placeholder.")
+            template = '\n\n'.join([template, '{schema}'])
 
         object_def = self.object_def
         schema = object_def.json_schema.copy()
@@ -597,7 +593,7 @@ class ToolOutputSchema(OutputSchema[OutputDataT]):
 
 
 @dataclass(init=False)
-class ToolOrTextOutputSchema(PlainTextOutputSchema[OutputDataT], ToolOutputSchema[OutputDataT]):
+class ToolOrTextOutputSchema(ToolOutputSchema[OutputDataT], PlainTextOutputSchema[OutputDataT]):
     def __init__(
         self,
         processor: PlainTextOutputProcessor[OutputDataT] | None,
@@ -609,11 +605,6 @@ class ToolOrTextOutputSchema(PlainTextOutputSchema[OutputDataT], ToolOutputSchem
     @property
     def mode(self) -> OutputMode:
         return 'tool_or_text'
-
-    def raise_if_unsupported(self, profile: ModelProfile) -> None:
-        """Raise an error if the mode is not supported by the model."""
-        if not profile.supports_tools:
-            raise UserError('Output tools are not supported by the model.')
 
 
 @dataclass
