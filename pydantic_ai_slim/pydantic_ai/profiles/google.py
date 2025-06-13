@@ -51,7 +51,7 @@ class GoogleJsonSchemaTransformer(JsonSchemaTransformer):
         schema.pop('title', None)
         schema.pop('default', None)
         schema.pop('$schema', None)
-        if (const := schema.pop('const', None)) is not None:  # pragma: no cover
+        if (const := schema.pop('const', None)) is not None:
             # Gemini doesn't support const, but it does support enum with a single value
             schema['enum'] = [const]
         schema.pop('discriminator', None)

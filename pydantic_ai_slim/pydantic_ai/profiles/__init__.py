@@ -32,7 +32,7 @@ class ModelProfile:
         Don't include any text or Markdown fencing before or after.
         """
     )
-    """The instructions to use for prompted JSON output. The schema placeholder will be replaced with the JSON schema for the output."""
+    """The instructions to use for prompted JSON output. The '{schema}' placeholder will be replaced with the JSON schema for the output."""
     json_schema_transformer: type[JsonSchemaTransformer] | None = None
     """The transformer to use to make JSON schemas for tools and structured output compatible with the model."""
 
