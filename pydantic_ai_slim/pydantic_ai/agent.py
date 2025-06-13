@@ -318,7 +318,9 @@ class Agent(Generic[AgentDepsT, OutputDataT]):
             warnings.warn('`result_retries` is deprecated, use `max_result_retries` instead', DeprecationWarning)
             output_retries = result_retries
 
-        default_output_mode = self.model.profile.default_output_mode if isinstance(self.model, models.Model) else None
+        default_output_mode = (
+            self.model.profile.default_structured_output_mode if isinstance(self.model, models.Model) else None
+        )
         self._output_schema = _output.OutputSchema[OutputDataT].build(
             output_type,
             default_mode=default_output_mode,
@@ -676,9 +678,11 @@ class Agent(Generic[AgentDepsT, OutputDataT]):
                 *[await func.run(run_context) for func in self._instructions_functions],
             ]
 
-            if isinstance(output_schema, _output.PromptedJsonOutputSchema):
-                template = model_used.profile.prompted_json_output_instructions
-                instructions = output_schema.instructions(template)
+            model_profile = model_used.profile
+            if isinstance(output_schema, _output.StructuredTextOutputSchema) and output_schema.use_instructions(
+                model_profile
+            ):
+                instructions = output_schema.instructions(model_profile.structured_output_instructions_template)
                 parts.append(instructions)
 
             parts = [p for p in parts if p]
@@ -1651,14 +1655,12 @@ class Agent(Generic[AgentDepsT, OutputDataT]):
                 output_type,
                 name=self._deprecated_result_tool_name,
                 description=self._deprecated_result_tool_description,
-                default_mode=model_profile.default_output_mode,
+                default_mode=model_profile.default_structured_output_mode,
             )
         else:
-            schema = self._output_schema.with_default_mode(model_profile.default_output_mode)
+            schema = self._output_schema.with_default_mode(model_profile.default_structured_output_mode)
 
-        if not schema.is_supported(model_profile.output_modes):
-            modes = ', '.join(f"'{m}'" for m in model_profile.output_modes)
-            raise exceptions.UserError(f"Output mode '{schema.mode}' is not among supported modes: {modes}")
+        schema.raise_if_unsupported(model_profile)
 
         return schema  # pyright: ignore[reportReturnType]
 

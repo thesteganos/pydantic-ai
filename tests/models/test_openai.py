@@ -34,7 +34,7 @@ from pydantic_ai.profiles import ModelProfile
 from pydantic_ai.profiles._json_schema import InlineDefsJsonSchemaTransformer
 from pydantic_ai.profiles.openai import OpenAIModelProfile, openai_model_profile
 from pydantic_ai.providers.google_gla import GoogleGLAProvider
-from pydantic_ai.result import JsonSchemaOutput, PromptedJsonOutput, TextOutput, ToolOutput, Usage
+from pydantic_ai.result import StructuredTextOutput, TextOutput, ToolOutput, Usage
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.tools import ToolDefinition
 
@@ -548,7 +548,7 @@ async def test_stream_structured_json_schema_output(allow_model_requests: None):
     ]
     mock_client = MockOpenAI.create_mock_stream(stream)
     m = OpenAIModel('gpt-4o', provider=OpenAIProvider(openai_client=mock_client))
-    agent = Agent(m, output_type=JsonSchemaOutput(MyTypedDict))
+    agent = Agent(m, output_type=StructuredTextOutput(MyTypedDict))
 
     async with agent.run_stream('') as result:
         assert not result.is_complete
@@ -1962,7 +1962,7 @@ async def test_openai_text_output_function(allow_model_requests: None, openai_ap
 
 
 @pytest.mark.vcr()
-async def test_openai_json_schema_output(allow_model_requests: None, openai_api_key: str):
+async def test_openai_structured_text_output(allow_model_requests: None, openai_api_key: str):
     m = OpenAIModel('gpt-4o', provider=OpenAIProvider(api_key=openai_api_key))
 
     class CityLocation(BaseModel):
@@ -1971,7 +1971,7 @@ async def test_openai_json_schema_output(allow_model_requests: None, openai_api_
         city: str
         country: str
 
-    agent = Agent(m, output_type=JsonSchemaOutput(CityLocation))
+    agent = Agent(m, output_type=StructuredTextOutput(CityLocation))
 
     @agent.tool_plain
     async def get_user_country() -> str:
@@ -2045,7 +2045,7 @@ async def test_openai_json_schema_output(allow_model_requests: None, openai_api_
 
 
 @pytest.mark.vcr()
-async def test_openai_json_schema_output_multiple(allow_model_requests: None, openai_api_key: str):
+async def test_openai_structured_text_output_multiple(allow_model_requests: None, openai_api_key: str):
     m = OpenAIModel('gpt-4o', provider=OpenAIProvider(api_key=openai_api_key))
 
     class CityLocation(BaseModel):
@@ -2056,7 +2056,7 @@ async def test_openai_json_schema_output_multiple(allow_model_requests: None, op
         country: str
         language: str
 
-    agent = Agent(m, output_type=JsonSchemaOutput([CityLocation, CountryLanguage]))
+    agent = Agent(m, output_type=StructuredTextOutput([CityLocation, CountryLanguage]))
 
     @agent.tool_plain
     async def get_user_country() -> str:
@@ -2134,14 +2134,14 @@ async def test_openai_json_schema_output_multiple(allow_model_requests: None, op
 
 
 @pytest.mark.vcr()
-async def test_openai_prompted_json_output(allow_model_requests: None, openai_api_key: str):
+async def test_openai_structured_text_output_with_instructions(allow_model_requests: None, openai_api_key: str):
     m = OpenAIModel('gpt-4o', provider=OpenAIProvider(api_key=openai_api_key))
 
     class CityLocation(BaseModel):
         city: str
         country: str
 
-    agent = Agent(m, output_type=PromptedJsonOutput(CityLocation))
+    agent = Agent(m, output_type=StructuredTextOutput(CityLocation, instructions=True))
 
     @agent.tool_plain
     async def get_user_country() -> str:
@@ -2229,7 +2229,9 @@ Don't include any text or Markdown fencing before or after.\
 
 
 @pytest.mark.vcr()
-async def test_openai_prompted_json_output_multiple(allow_model_requests: None, openai_api_key: str):
+async def test_openai_structured_text_output_with_instructions_multiple(
+    allow_model_requests: None, openai_api_key: str
+):
     m = OpenAIModel('gpt-4o', provider=OpenAIProvider(api_key=openai_api_key))
 
     class CityLocation(BaseModel):
@@ -2240,7 +2242,7 @@ async def test_openai_prompted_json_output_multiple(allow_model_requests: None, 
         country: str
         language: str
 
-    agent = Agent(m, output_type=PromptedJsonOutput([CityLocation, CountryLanguage]))
+    agent = Agent(m, output_type=StructuredTextOutput([CityLocation, CountryLanguage], instructions=True))
 
     @agent.tool_plain
     async def get_user_country() -> str:

@@ -53,7 +53,7 @@ from pydantic_ai.models.gemini import (
     _GeminiUsageMetaData,
 )
 from pydantic_ai.providers.google_gla import GoogleGLAProvider
-from pydantic_ai.result import JsonSchemaOutput, PromptedJsonOutput, TextOutput, ToolOutput, Usage
+from pydantic_ai.result import StructuredTextOutput, TextOutput, ToolOutput, Usage
 from pydantic_ai.tools import ToolDefinition
 
 from ..conftest import ClientWithHandler, IsDatetime, IsNow, IsStr, TestEnv
@@ -1582,14 +1582,14 @@ It's the capital of Mexico and one of the largest metropolitan areas in the worl
 
 
 @pytest.mark.vcr()
-async def test_gemini_json_schema_output_with_tools(allow_model_requests: None, gemini_api_key: str):
+async def test_gemini_structured_text_output_with_tools(allow_model_requests: None, gemini_api_key: str):
     m = GeminiModel('gemini-2.0-flash', provider=GoogleGLAProvider(api_key=gemini_api_key))
 
     class CityLocation(BaseModel):
         city: str
         country: str
 
-    agent = Agent(m, output_type=JsonSchemaOutput(CityLocation))
+    agent = Agent(m, output_type=StructuredTextOutput(CityLocation))
 
     @agent.tool_plain
     async def get_user_country() -> str:
@@ -1600,7 +1600,7 @@ async def test_gemini_json_schema_output_with_tools(allow_model_requests: None, 
 
 
 @pytest.mark.vcr()
-async def test_gemini_json_schema_output(allow_model_requests: None, gemini_api_key: str):
+async def test_gemini_structured_text_output(allow_model_requests: None, gemini_api_key: str):
     m = GeminiModel('gemini-2.0-flash', provider=GoogleGLAProvider(api_key=gemini_api_key))
 
     class CityLocation(BaseModel):
@@ -1609,7 +1609,7 @@ async def test_gemini_json_schema_output(allow_model_requests: None, gemini_api_
         city: str
         country: str
 
-    agent = Agent(m, output_type=JsonSchemaOutput(CityLocation))
+    agent = Agent(m, output_type=StructuredTextOutput(CityLocation))
 
     result = await agent.run('What is the largest city in Mexico?')
     assert result.output == snapshot(CityLocation(city='Mexico City', country='Mexico'))
@@ -1652,7 +1652,7 @@ async def test_gemini_json_schema_output(allow_model_requests: None, gemini_api_
 
 
 @pytest.mark.vcr()
-async def test_gemini_json_schema_output_multiple(allow_model_requests: None, gemini_api_key: str):
+async def test_gemini_structured_text_output_multiple(allow_model_requests: None, gemini_api_key: str):
     m = GeminiModel('gemini-2.0-flash', provider=GoogleGLAProvider(api_key=gemini_api_key))
 
     class CityLocation(BaseModel):
@@ -1663,7 +1663,7 @@ async def test_gemini_json_schema_output_multiple(allow_model_requests: None, ge
         country: str
         language: str
 
-    agent = Agent(m, output_type=JsonSchemaOutput([CityLocation, CountryLanguage]))
+    agent = Agent(m, output_type=StructuredTextOutput([CityLocation, CountryLanguage]))
 
     result = await agent.run('What is the primarily language spoken in Mexico?')
     assert result.output == snapshot(CountryLanguage(country='Mexico', language='Spanish'))
@@ -1711,14 +1711,14 @@ async def test_gemini_json_schema_output_multiple(allow_model_requests: None, ge
 
 
 @pytest.mark.vcr()
-async def test_gemini_prompted_json_output(allow_model_requests: None, gemini_api_key: str):
+async def test_gemini_structured_text_output_with_instructions(allow_model_requests: None, gemini_api_key: str):
     m = GeminiModel('gemini-2.0-flash', provider=GoogleGLAProvider(api_key=gemini_api_key))
 
     class CityLocation(BaseModel):
         city: str
         country: str
 
-    agent = Agent(m, output_type=PromptedJsonOutput(CityLocation))
+    agent = Agent(m, output_type=StructuredTextOutput(CityLocation, instructions=True))
 
     result = await agent.run('What is the largest city in Mexico?')
     assert result.output == snapshot(CityLocation(city='Mexico City', country='Mexico'))
@@ -1763,14 +1763,16 @@ Don't include any text or Markdown fencing before or after.\
 
 
 @pytest.mark.vcr()
-async def test_gemini_prompted_json_output_with_tools(allow_model_requests: None, gemini_api_key: str):
+async def test_gemini_structured_text_output_with_instructions_with_tools(
+    allow_model_requests: None, gemini_api_key: str
+):
     m = GeminiModel('gemini-2.5-pro-preview-05-06', provider=GoogleGLAProvider(api_key=gemini_api_key))
 
     class CityLocation(BaseModel):
         city: str
         country: str
 
-    agent = Agent(m, output_type=PromptedJsonOutput(CityLocation))
+    agent = Agent(m, output_type=StructuredTextOutput(CityLocation, instructions=True))
 
     @agent.tool_plain
     async def get_user_country() -> str:
@@ -1848,7 +1850,9 @@ Don't include any text or Markdown fencing before or after.\
 
 
 @pytest.mark.vcr()
-async def test_gemini_prompted_json_output_multiple(allow_model_requests: None, gemini_api_key: str):
+async def test_gemini_structured_text_output_with_instructions_multiple(
+    allow_model_requests: None, gemini_api_key: str
+):
     m = GeminiModel('gemini-2.0-flash', provider=GoogleGLAProvider(api_key=gemini_api_key))
 
     class CityLocation(BaseModel):
@@ -1859,7 +1863,7 @@ async def test_gemini_prompted_json_output_multiple(allow_model_requests: None, 
         country: str
         language: str
 
-    agent = Agent(m, output_type=PromptedJsonOutput([CityLocation, CountryLanguage]))
+    agent = Agent(m, output_type=StructuredTextOutput([CityLocation, CountryLanguage], instructions=True))
 
     result = await agent.run('What is the largest city in Mexico?')
     assert result.output == snapshot(CityLocation(city='Mexico City', country='Mexico'))

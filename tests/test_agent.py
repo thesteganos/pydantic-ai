@@ -14,9 +14,8 @@ from typing_extensions import Self
 
 from pydantic_ai import Agent, ModelRetry, RunContext, UnexpectedModelBehavior, UserError, capture_run_messages
 from pydantic_ai._output import (
-    JsonSchemaOutput,
     OutputSpec,
-    PromptedJsonOutput,
+    StructuredTextOutput,
     TextOutput,
     TextOutputSchema,
     ToolOutput,
@@ -1263,7 +1262,7 @@ def test_output_type_multiple_custom_tools():
     )
 
 
-def test_output_type_prompted_json():
+def test_output_type_structured_text():
     def return_city_location(_: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
         text = CityLocation(city='Mexico City', country='Mexico').model_dump_json()
         return ModelResponse(parts=[TextPart(content=text)])
@@ -1278,8 +1277,8 @@ def test_output_type_prompted_json():
 
     agent = Agent(
         m,
-        output_type=PromptedJsonOutput(
-            CityLocation, name='City & Country', description='Description from PromptedJsonOutput'
+        output_type=StructuredTextOutput(
+            CityLocation, name='City & Country', description='Description from StructuredTextOutput'
         ),
     )
 
@@ -1297,7 +1296,7 @@ def test_output_type_prompted_json():
                 instructions="""\
 Always respond with a JSON object that's compatible with this schema:
 
-{"properties": {"city": {"type": "string"}, "country": {"type": "string"}}, "required": ["city", "country"], "title": "City & Country", "type": "object", "description": "Description from PromptedJsonOutput. Description from docstring."}
+{"properties": {"city": {"type": "string"}, "country": {"type": "string"}}, "required": ["city", "country"], "title": "City & Country", "type": "object", "description": "Description from StructuredTextOutput. Description from docstring."}
 
 Don't include any text or Markdown fencing before or after.\
 """,
@@ -1312,7 +1311,7 @@ Don't include any text or Markdown fencing before or after.\
     )
 
 
-def test_output_type_prompted_json_with_defs():
+def test_output_type_structured_text_with_defs():
     class Foo(BaseModel):
         """Foo description"""
 
@@ -1348,7 +1347,7 @@ def test_output_type_prompted_json_with_defs():
 
     agent = Agent(
         m,
-        output_type=PromptedJsonOutput(
+        output_type=StructuredTextOutput(
             [FooBar, FooBaz], name='FooBar or FooBaz', description='FooBar or FooBaz description'
         ),
     )
@@ -1394,7 +1393,7 @@ def test_output_type_json_schema():
             text = '{"city": "Mexico City", "country": "Mexico"}'
         return ModelResponse(parts=[TextPart(content=text)])
 
-    m = FunctionModel(return_city_location, profile=ModelProfile(output_modes={'tool', 'json_schema'}))
+    m = FunctionModel(return_city_location, profile=ModelProfile(supports_json_schema_response_format=True))
 
     class CityLocation(BaseModel):
         city: str
@@ -1402,7 +1401,7 @@ def test_output_type_json_schema():
 
     agent = Agent(
         m,
-        output_type=JsonSchemaOutput(CityLocation),
+        output_type=StructuredTextOutput(CityLocation),
     )
 
     result = agent.run_sync('What is the capital of Mexico?')
@@ -1449,7 +1448,7 @@ def test_output_type_json_schema():
     )
 
 
-def test_output_type_prompted_json_function_with_retry():
+def test_output_type_structured_text_function_with_retry():
     class Weather(BaseModel):
         temperature: float
         description: str
@@ -1469,7 +1468,7 @@ def test_output_type_prompted_json_function_with_retry():
 
         return ModelResponse(parts=[TextPart(content=args_json)])
 
-    agent = Agent(FunctionModel(call_tool), output_type=PromptedJsonOutput(get_weather))
+    agent = Agent(FunctionModel(call_tool), output_type=StructuredTextOutput(get_weather, instructions=True))
     result = agent.run_sync('New York City')
     assert result.output == snapshot(Weather(temperature=28.7, description='sunny'))
     assert result.all_messages() == snapshot(
@@ -3049,7 +3048,7 @@ def test_unsupported_output_mode():
     class Foo(BaseModel):
         bar: str
 
-    agent = Agent('test', output_type=JsonSchemaOutput(Foo))
+    agent = Agent('test', output_type=StructuredTextOutput(Foo, instructions=False))
 
-    with pytest.raises(UserError, match="Output mode 'json_schema' is not among supported modes: 'tool'"):
+    with pytest.raises(UserError, match='Structured output without using instructions is not supported by the model.'):
         agent.run_sync('Hello')

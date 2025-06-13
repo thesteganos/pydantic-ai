@@ -21,7 +21,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.profiles.openai import openai_model_profile
-from pydantic_ai.result import JsonSchemaOutput, PromptedJsonOutput, TextOutput, ToolOutput
+from pydantic_ai.result import StructuredTextOutput, TextOutput, ToolOutput
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.usage import Usage
 
@@ -565,6 +565,7 @@ async def test_tool_output(allow_model_requests: None, openai_api_key: str):
                 ),
                 model_name='gpt-4o-2024-08-06',
                 timestamp=IsDatetime(),
+                vendor_id='resp_68477f0b40a8819cb8d55594bc2c232a001fd29e2d5573f7',
             ),
             ModelRequest(
                 parts=[
@@ -593,6 +594,7 @@ async def test_tool_output(allow_model_requests: None, openai_api_key: str):
                 ),
                 model_name='gpt-4o-2024-08-06',
                 timestamp=IsDatetime(),
+                vendor_id='resp_68477f0bfda8819ea65458cd7cc389b801dc81d4bc91f560',
             ),
             ModelRequest(
                 parts=[
@@ -647,6 +649,7 @@ async def test_text_output_function(allow_model_requests: None, openai_api_key: 
                 ),
                 model_name='gpt-4o-2024-08-06',
                 timestamp=IsDatetime(),
+                vendor_id='resp_68477f0d9494819ea4f123bba707c9ee0356a60c98816d6a',
             ),
             ModelRequest(
                 parts=[
@@ -668,13 +671,14 @@ async def test_text_output_function(allow_model_requests: None, openai_api_key: 
                 ),
                 model_name='gpt-4o-2024-08-06',
                 timestamp=IsDatetime(),
+                vendor_id='resp_68477f0e2b28819d9c828ef4ee526d6a03434b607c02582d',
             ),
         ]
     )
 
 
 @pytest.mark.vcr()
-async def test_json_schema_output(allow_model_requests: None, openai_api_key: str):
+async def test_structured_text_output(allow_model_requests: None, openai_api_key: str):
     m = OpenAIResponsesModel('gpt-4o', provider=OpenAIProvider(api_key=openai_api_key))
 
     class CityLocation(BaseModel):
@@ -683,7 +687,7 @@ async def test_json_schema_output(allow_model_requests: None, openai_api_key: st
         city: str
         country: str
 
-    agent = Agent(m, output_type=JsonSchemaOutput(CityLocation))
+    agent = Agent(m, output_type=StructuredTextOutput(CityLocation))
 
     @agent.tool_plain
     async def get_user_country() -> str:
@@ -715,6 +719,7 @@ async def test_json_schema_output(allow_model_requests: None, openai_api_key: st
                 ),
                 model_name='gpt-4o-2024-08-06',
                 timestamp=IsDatetime(),
+                vendor_id='resp_68477f0f220081a1a621d6bcdc7f31a50b8591d9001d2329',
             ),
             ModelRequest(
                 parts=[
@@ -736,13 +741,14 @@ async def test_json_schema_output(allow_model_requests: None, openai_api_key: st
                 ),
                 model_name='gpt-4o-2024-08-06',
                 timestamp=IsDatetime(),
+                vendor_id='resp_68477f0fde708192989000a62809c6e5020197534e39cc1f',
             ),
         ]
     )
 
 
 @pytest.mark.vcr()
-async def test_json_schema_output_multiple(allow_model_requests: None, openai_api_key: str):
+async def test_structured_text_output_multiple(allow_model_requests: None, openai_api_key: str):
     m = OpenAIResponsesModel('gpt-4o', provider=OpenAIProvider(api_key=openai_api_key))
 
     class CityLocation(BaseModel):
@@ -753,7 +759,7 @@ async def test_json_schema_output_multiple(allow_model_requests: None, openai_ap
         country: str
         language: str
 
-    agent = Agent(m, output_type=JsonSchemaOutput([CityLocation, CountryLanguage]))
+    agent = Agent(m, output_type=StructuredTextOutput([CityLocation, CountryLanguage]))
 
     @agent.tool_plain
     async def get_user_country() -> str:
@@ -785,6 +791,7 @@ async def test_json_schema_output_multiple(allow_model_requests: None, openai_ap
                 ),
                 model_name='gpt-4o-2024-08-06',
                 timestamp=IsDatetime(),
+                vendor_id='resp_68477f10f2d081a39b3438f413b3bafc0dd57d732903c563',
             ),
             ModelRequest(
                 parts=[
@@ -810,20 +817,21 @@ async def test_json_schema_output_multiple(allow_model_requests: None, openai_ap
                 ),
                 model_name='gpt-4o-2024-08-06',
                 timestamp=IsDatetime(),
+                vendor_id='resp_68477f119830819da162aa6e10552035061ad97e2eef7871',
             ),
         ]
     )
 
 
 @pytest.mark.vcr()
-async def test_prompted_json_output(allow_model_requests: None, openai_api_key: str):
+async def test_structured_text_output_with_instructions(allow_model_requests: None, openai_api_key: str):
     m = OpenAIResponsesModel('gpt-4o', provider=OpenAIProvider(api_key=openai_api_key))
 
     class CityLocation(BaseModel):
         city: str
         country: str
 
-    agent = Agent(m, output_type=PromptedJsonOutput(CityLocation))
+    agent = Agent(m, output_type=StructuredTextOutput(CityLocation, instructions=True))
 
     @agent.tool_plain
     async def get_user_country() -> str:
@@ -862,6 +870,7 @@ Don't include any text or Markdown fencing before or after.\
                 ),
                 model_name='gpt-4o-2024-08-06',
                 timestamp=IsDatetime(),
+                vendor_id='resp_68482f12d63881a1830201ed101ecfbf02f8ef7f2fb42b50',
             ),
             ModelRequest(
                 parts=[
@@ -890,13 +899,14 @@ Don't include any text or Markdown fencing before or after.\
                 ),
                 model_name='gpt-4o-2024-08-06',
                 timestamp=IsDatetime(),
+                vendor_id='resp_68482f1b556081918d64c9088a470bf0044fdb7d019d4115',
             ),
         ]
     )
 
 
 @pytest.mark.vcr()
-async def test_prompted_json_output_multiple(allow_model_requests: None, openai_api_key: str):
+async def test_structured_text_output_with_instructions_multiple(allow_model_requests: None, openai_api_key: str):
     m = OpenAIResponsesModel('gpt-4o', provider=OpenAIProvider(api_key=openai_api_key))
 
     class CityLocation(BaseModel):
@@ -907,7 +917,7 @@ async def test_prompted_json_output_multiple(allow_model_requests: None, openai_
         country: str
         language: str
 
-    agent = Agent(m, output_type=PromptedJsonOutput([CityLocation, CountryLanguage]))
+    agent = Agent(m, output_type=StructuredTextOutput([CityLocation, CountryLanguage], instructions=True))
 
     @agent.tool_plain
     async def get_user_country() -> str:
@@ -946,6 +956,7 @@ Don't include any text or Markdown fencing before or after.\
                 ),
                 model_name='gpt-4o-2024-08-06',
                 timestamp=IsDatetime(),
+                vendor_id='resp_68482f1d38e081a1ac828acda978aa6b08e79646fe74d5ee',
             ),
             ModelRequest(
                 parts=[
@@ -978,6 +989,7 @@ Don't include any text or Markdown fencing before or after.\
                 ),
                 model_name='gpt-4o-2024-08-06',
                 timestamp=IsDatetime(),
+                vendor_id='resp_68482f28c1b081a1ae73cbbee012ee4906b4ab2d00d03024',
             ),
         ]
     )

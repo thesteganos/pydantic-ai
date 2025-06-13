@@ -270,12 +270,25 @@ async def _prepare_request_parameters(
         function_tool_defs = await ctx.deps.prepare_tools(run_context, function_tool_defs) or []
 
     output_schema = ctx.deps.output_schema
+    model_profile = ctx.deps.model.profile
+
+    output_tools = []
+    output_object = None
+    if isinstance(output_schema, _output.ToolOutputSchema):
+        output_tools = output_schema.tool_defs()
+    elif isinstance(output_schema, _output.StructuredTextOutputSchema):
+        if not output_schema.use_instructions(model_profile):
+            output_object = output_schema.object_def
+
+    # Both ToolOrTextOutputSchema and StructuredTextOutputSchema inherit from TextOutputSchema
+    allow_text_output = isinstance(output_schema, _output.TextOutputSchema)
+
     return models.ModelRequestParameters(
         function_tools=function_tool_defs,
         output_mode=output_schema.mode,
-        output_object=output_schema.object_def if isinstance(output_schema, _output.JsonTextOutputSchema) else None,
-        output_tools=output_schema.tool_defs() if isinstance(output_schema, _output.ToolOutputSchema) else [],
-        allow_text_output=isinstance(output_schema, _output.TextOutputSchema),
+        output_tools=output_tools,
+        output_object=output_object,
+        allow_text_output=allow_text_output,
     )
 
 

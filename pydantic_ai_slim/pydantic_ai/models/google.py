@@ -250,20 +250,17 @@ class GoogleModel(Model):
     ) -> GenerateContentResponse | Awaitable[AsyncIterator[GenerateContentResponse]]:
         tools = self._get_tools(model_request_parameters)
 
-        output_mode = model_request_parameters.output_mode
         response_mime_type = None
         response_schema = None
-        if output_mode == 'json_schema':
-            response_mime_type = 'application/json'
+        if model_request_parameters.output_mode == 'structured_text':
+            if output_object := model_request_parameters.output_object:
+                if tools:
+                    raise UserError('Google does not support JSON schema output and tools at the same time.')
 
-            output_object = model_request_parameters.output_object
-            assert output_object is not None
-            response_schema = self._map_response_schema(output_object)
-
-            if tools:
-                raise UserError('Google does not support JSON schema output and tools at the same time/')
-        elif output_mode == 'prompted_json' and not tools:
-            response_mime_type = 'application/json'
+                response_mime_type = 'application/json'
+                response_schema = self._map_response_schema(output_object)
+            elif not tools:
+                response_mime_type = 'application/json'
 
         tool_config = self._get_tool_config(model_request_parameters, tools)
         system_instruction, contents = await self._map_messages(messages)

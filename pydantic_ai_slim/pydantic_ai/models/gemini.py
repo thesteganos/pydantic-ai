@@ -218,19 +218,15 @@ class GeminiModel(Model):
             request_data['toolConfig'] = tool_config
 
         generation_config = _settings_to_generation_config(model_settings)
+        if model_request_parameters.output_mode == 'structured_text':
+            if output_object := model_request_parameters.output_object:
+                if tools:
+                    raise UserError('Google does not support JSON schema output and tools at the same time.')
 
-        output_mode = model_request_parameters.output_mode
-        if output_mode == 'json_schema':
-            generation_config['response_mime_type'] = 'application/json'
-
-            output_object = model_request_parameters.output_object
-            assert output_object is not None
-            generation_config['response_schema'] = self._map_response_schema(output_object)
-
-            if tools:
-                raise UserError('Google does not support JSON schema output and tools at the same time.')
-        elif output_mode == 'prompted_json' and not tools:
-            generation_config['response_mime_type'] = 'application/json'
+                generation_config['response_mime_type'] = 'application/json'
+                generation_config['response_schema'] = self._map_response_schema(output_object)
+            elif not tools:
+                generation_config['response_mime_type'] = 'application/json'
 
         if generation_config:
             request_data['generationConfig'] = generation_config

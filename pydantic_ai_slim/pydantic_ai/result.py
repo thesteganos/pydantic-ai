@@ -12,14 +12,13 @@ from typing_extensions import TypeVar, deprecated, overload
 
 from . import _utils, exceptions, messages as _messages, models
 from ._output import (
-    JsonSchemaOutput,
     OutputDataT,
     OutputDataT_inv,
     OutputSchema,
     OutputValidator,
     OutputValidatorFunc,
     PlainTextOutputSchema,
-    PromptedJsonOutput,
+    StructuredTextOutput,
     TextOutput,
     TextOutputSchema,
     ToolOutput,
@@ -34,8 +33,7 @@ __all__ = (
     'OutputDataT_inv',
     'ToolOutput',
     'TextOutput',
-    'JsonSchemaOutput',
-    'PromptedJsonOutput',
+    'StructuredTextOutput',
     'OutputValidatorFunc',
 )
 

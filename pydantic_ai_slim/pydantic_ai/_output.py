@@ -5,7 +5,7 @@ import json
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Callable, Generic, Literal, Union, cast, overload
+from typing import TYPE_CHECKING, Any, Callable, Generic, Literal, Union, cast, overload
 
 from pydantic import TypeAdapter, ValidationError
 from pydantic_core import SchemaValidator
@@ -16,6 +16,9 @@ from typing_inspection.introspection import is_union_origin
 from . import _function_schema, _utils, messages as _messages
 from .exceptions import ModelRetry, UserError
 from .tools import AgentDepsT, GenerateToolJsonSchema, ObjectJsonSchema, RunContext, ToolDefinition
+
+if TYPE_CHECKING:
+    from .profiles import ModelProfile
 
 T = TypeVar('T')
 """An invariant TypeVar."""
@@ -145,10 +148,18 @@ class TextOutput(Generic[OutputDataT]):
 
 
 @dataclass(init=False)
-class JsonSchemaOutput(Generic[OutputDataT]):
-    """Marker class to use JSON schema output for outputs."""
+class StructuredTextOutput(Generic[OutputDataT]):
+    """Marker class to use structured text output for outputs."""
 
     outputs: Sequence[OutputTypeOrFunction[OutputDataT]]
+    instructions: bool | str | None
+    """Whether to use the model's built-in functionality for structured output matching a JSON schema, or to pass the JSON schema to the model as instructions.
+
+    If `None`, we'll use the model's built-in functionality if it's supported, and otherwise pass the JSON schema to the model as instructions.
+    If `True`, we'll pass the JSON schema to the model using the instructions template specified on the model's profile.
+    If `False`, we'll use the model's built-in functionality and raise an error if it's not supported.
+    If `str`, we'll pass the JSON schema to the model using the specified instructions template.
+    """
     name: str | None
     description: str | None
     strict: bool | None
@@ -160,30 +171,13 @@ class JsonSchemaOutput(Generic[OutputDataT]):
         name: str | None = None,
         description: str | None = None,
         strict: bool | None = True,
+        instructions: bool | str | None = None,
     ):
         self.outputs = flatten_output_spec(type_)
         self.name = name
         self.description = description
         self.strict = strict
-
-
-class PromptedJsonOutput(Generic[OutputDataT]):
-    """Marker class to use prompted JSON mode for outputs."""
-
-    outputs: Sequence[OutputTypeOrFunction[OutputDataT]]
-    name: str | None
-    description: str | None
-
-    def __init__(
-        self,
-        type_: OutputTypeOrFunction[OutputDataT] | Sequence[OutputTypeOrFunction[OutputDataT]],
-        *,
-        name: str | None = None,
-        description: str | None = None,
-    ):
-        self.outputs = flatten_output_spec(type_)
-        self.name = name
-        self.description = description
+        self.instructions = instructions
 
 
 T_co = TypeVar('T_co', covariant=True)
@@ -197,9 +191,8 @@ OutputSpec = TypeAliasType(
         OutputTypeOrFunction[T_co],
         ToolOutput[T_co],
         TextOutput[T_co],
+        StructuredTextOutput[T_co],
         Sequence[Union[OutputTypeOrFunction[T_co], ToolOutput[T_co], TextOutput[T_co]]],
-        JsonSchemaOutput[T_co],
-        PromptedJsonOutput[T_co],
     ],
     type_params=(T_co,),
 )
@@ -213,28 +206,15 @@ TextOutputFunction = TypeAliasType(
     type_params=(T_co,),
 )
 
-
-OutputMode = Literal['text', 'tool', 'json_schema', 'prompted_json', 'tool_or_text']
+OutputMode = Literal['text', 'tool', 'structured_text', 'tool_or_text']
 """All output modes."""
-SupportableOutputMode = Literal['tool', 'json_schema']
-"""Output modes that require specific support by a model (class). Used by ModelProfile.output_modes"""
-StructuredOutputMode = Literal['tool', 'json_schema', 'prompted_json']
-"""Output modes that can be used for any structured output. Used by ModelProfile.default_output_mode"""
+StructuredOutputMode = Literal['tool', 'structured_text']
+"""Output modes that can be used for structured output. Used by ModelProfile.default_structured_output_mode"""
 
 
 class BaseOutputSchema(ABC, Generic[OutputDataT]):
-    @property
-    @abstractmethod
-    def mode(self) -> OutputMode | None:
-        raise NotImplementedError()
-
     @abstractmethod
     def with_default_mode(self, mode: StructuredOutputMode) -> OutputSchema[OutputDataT]:
-        raise NotImplementedError()
-
-    @abstractmethod
-    def is_supported(self, supported_modes: set[SupportableOutputMode]) -> bool:
-        """Whether the mode is supported by the model."""
         raise NotImplementedError()
 
     @property
@@ -269,7 +249,7 @@ class OutputSchema(BaseOutputSchema[OutputDataT], ABC):
         name: str | None = None,
         description: str | None = None,
         strict: bool | None = None,
-    ) -> OutputSchemaWithoutMode[OutputDataT]: ...
+    ) -> BaseOutputSchema[OutputDataT]: ...
 
     @classmethod
     def build(
@@ -285,19 +265,15 @@ class OutputSchema(BaseOutputSchema[OutputDataT], ABC):
         if output_spec is str:
             return PlainTextOutputSchema()
 
-        if isinstance(output_spec, JsonSchemaOutput):
-            return JsonSchemaOutputSchema(
+        if isinstance(output_spec, StructuredTextOutput):
+            return StructuredTextOutputSchema(
                 cls._build_processor(
                     output_spec.outputs,
                     name=output_spec.name,
                     description=output_spec.description,
                     strict=output_spec.strict,
                 ),
-            )
-
-        if isinstance(output_spec, PromptedJsonOutput):
-            return PromptedJsonOutputSchema(
-                cls._build_processor(output_spec.outputs, name=output_spec.name, description=output_spec.description),
+                instructions=output_spec.instructions,
             )
 
         text_outputs: Sequence[type[str] | TextOutput[OutputDataT]] = []
@@ -407,6 +383,11 @@ class OutputSchema(BaseOutputSchema[OutputDataT], ABC):
     def mode(self) -> OutputMode:
         raise NotImplementedError()
 
+    @abstractmethod
+    def raise_if_unsupported(self, profile: ModelProfile) -> None:
+        """Raise an error if the mode is not supported by the model."""
+        raise NotImplementedError()
+
     def with_default_mode(self, mode: StructuredOutputMode) -> OutputSchema[OutputDataT]:
         return self
 
@@ -424,27 +405,13 @@ class OutputSchemaWithoutMode(BaseOutputSchema[OutputDataT]):
         self.processor = processor
         self._tools = tools
 
-    @property
-    def mode(self) -> None:
-        return None  # pragma: no cover
-
     def with_default_mode(self, mode: StructuredOutputMode) -> OutputSchema[OutputDataT]:
-        if mode == 'json_schema':
-            return JsonSchemaOutputSchema(
-                self.processor,
-            )
-        elif mode == 'prompted_json':
-            return PromptedJsonOutputSchema(
-                self.processor,
-            )
+        if mode == 'structured_text':
+            return StructuredTextOutputSchema(self.processor)
         elif mode == 'tool':
-            return ToolOutputSchema(tools=self.tools)
+            return ToolOutputSchema(self.tools)
         else:
             assert_never(mode)
-
-    def is_supported(self, supported_modes: set[SupportableOutputMode]) -> bool:
-        """Whether the mode is supported by the model."""
-        return False  # pragma: no cover
 
     @property
     def tools(self) -> dict[str, OutputTool[OutputDataT]]:
@@ -474,9 +441,9 @@ class PlainTextOutputSchema(TextOutputSchema[OutputDataT]):
     def mode(self) -> OutputMode:
         return 'text'
 
-    def is_supported(self, supported_modes: set[SupportableOutputMode]) -> bool:
-        """Whether the mode is supported by the model."""
-        return True
+    def raise_if_unsupported(self, profile: ModelProfile) -> None:
+        """Raise an error if the mode is not supported by the model."""
+        pass
 
     async def process(
         self,
@@ -504,9 +471,18 @@ class PlainTextOutputSchema(TextOutputSchema[OutputDataT]):
         )
 
 
-@dataclass
-class JsonTextOutputSchema(TextOutputSchema[OutputDataT], ABC):
+@dataclass(init=False)
+class StructuredTextOutputSchema(TextOutputSchema[OutputDataT]):
     processor: ObjectOutputProcessor[OutputDataT] | UnionOutputProcessor[OutputDataT]
+    _instructions: bool | str | None = None
+
+    def __init__(
+        self,
+        processor: ObjectOutputProcessor[OutputDataT] | UnionOutputProcessor[OutputDataT],
+        instructions: bool | str | None = None,
+    ):
+        self.processor = processor
+        self._instructions = instructions
 
     @property
     def object_def(self) -> OutputObjectDefinition:
@@ -536,28 +512,31 @@ class JsonTextOutputSchema(TextOutputSchema[OutputDataT], ABC):
             text, run_context, allow_partial=allow_partial, wrap_validation_errors=wrap_validation_errors
         )
 
-
-class JsonSchemaOutputSchema(JsonTextOutputSchema[OutputDataT]):
     @property
     def mode(self) -> OutputMode:
-        return 'json_schema'
+        return 'structured_text'
 
-    def is_supported(self, supported_modes: set[SupportableOutputMode]) -> bool:
-        """Whether the mode is supported by the model."""
-        return 'json_schema' in supported_modes
+    def raise_if_unsupported(self, profile: ModelProfile) -> None:
+        """Raise an error if the mode is not supported by the model."""
+        if self._instructions is False and not profile.supports_json_schema_response_format:
+            raise UserError('Structured output without using instructions is not supported by the model.')
 
-
-class PromptedJsonOutputSchema(JsonTextOutputSchema[OutputDataT]):
-    @property
-    def mode(self) -> OutputMode:
-        return 'prompted_json'
-
-    def is_supported(self, supported_modes: set[SupportableOutputMode]) -> bool:
-        """Whether the mode is supported by the model."""
-        return True
+    def use_instructions(self, profile: ModelProfile) -> bool:
+        if isinstance(self._instructions, bool):
+            return self._instructions
+        elif isinstance(self._instructions, str):
+            return True
+        else:
+            return not profile.supports_json_schema_response_format
 
     def instructions(self, template: str) -> str:
-        """Get instructions for model to output manual JSON matching the schema."""
+        """Get instructions to tell model to output JSON matching the schema."""
+        if isinstance(self._instructions, str):
+            template = self._instructions
+
+        if '{schema}' not in template:
+            raise UserError("Structured output instructions template must contain a '{schema}' placeholder.")
+
         object_def = self.object_def
         schema = object_def.json_schema.copy()
         if object_def.name:
@@ -579,9 +558,10 @@ class ToolOutputSchema(OutputSchema[OutputDataT]):
     def mode(self) -> OutputMode:
         return 'tool'
 
-    def is_supported(self, supported_modes: set[SupportableOutputMode]) -> bool:
-        """Whether the mode is supported by the model."""
-        return 'tool' in supported_modes
+    def raise_if_unsupported(self, profile: ModelProfile) -> None:
+        """Raise an error if the mode is not supported by the model."""
+        if not profile.supports_tools:
+            raise UserError('Output tools are not supported by the model.')
 
     @property
     def tools(self) -> dict[str, OutputTool[OutputDataT]]:
@@ -630,9 +610,10 @@ class ToolOrTextOutputSchema(PlainTextOutputSchema[OutputDataT], ToolOutputSchem
     def mode(self) -> OutputMode:
         return 'tool_or_text'
 
-    def is_supported(self, supported_modes: set[SupportableOutputMode]) -> bool:
-        """Whether the mode is supported by the model."""
-        return 'tool' in supported_modes
+    def raise_if_unsupported(self, profile: ModelProfile) -> None:
+        """Raise an error if the mode is not supported by the model."""
+        if not profile.supports_tools:
+            raise UserError('Output tools are not supported by the model.')
 
 
 @dataclass
