@@ -434,7 +434,7 @@ class OpenAIModel(Model):
         }
         if o.description:
             response_format_param['json_schema']['description'] = o.description
-        if OpenAIModelProfile.from_profile(self.profile).openai_supports_strict_tool_definition:
+        if OpenAIModelProfile.from_profile(self.profile).openai_supports_strict_tool_definition:  # pragma: no branch
             response_format_param['json_schema']['strict'] = o.strict
         return response_format_param
 
