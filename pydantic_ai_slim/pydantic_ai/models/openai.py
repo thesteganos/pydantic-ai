@@ -427,18 +427,14 @@ class OpenAIModel(Model):
             function={'name': t.tool_name, 'arguments': t.args_as_json_str()},
         )
 
-    @staticmethod
-    def _map_json_schema(o: OutputObjectDefinition) -> chat.completion_create_params.ResponseFormat:
+    def _map_json_schema(self, o: OutputObjectDefinition) -> chat.completion_create_params.ResponseFormat:
         response_format_param: chat.completion_create_params.ResponseFormatJSONSchema = {  # pyright: ignore[reportPrivateImportUsage]
             'type': 'json_schema',
-            'json_schema': {
-                'name': o.name or DEFAULT_OUTPUT_TOOL_NAME,
-                'schema': o.json_schema,
-            },
+            'json_schema': {'name': o.name or DEFAULT_OUTPUT_TOOL_NAME, 'schema': o.json_schema, 'strict': True},
         }
         if o.description:
             response_format_param['json_schema']['description'] = o.description
-        if o.strict:  # pragma: no branch
+        if OpenAIModelProfile.from_profile(self.profile).openai_supports_strict_tool_definition:
             response_format_param['json_schema']['strict'] = o.strict
         return response_format_param
 
@@ -827,8 +823,7 @@ class OpenAIResponsesModel(Model):
             type='function_call',
         )
 
-    @staticmethod
-    def _map_json_schema(o: OutputObjectDefinition) -> responses.ResponseFormatTextJSONSchemaConfigParam:
+    def _map_json_schema(self, o: OutputObjectDefinition) -> responses.ResponseFormatTextJSONSchemaConfigParam:
         response_format_param: responses.ResponseFormatTextJSONSchemaConfigParam = {
             'type': 'json_schema',
             'name': o.name or DEFAULT_OUTPUT_TOOL_NAME,
@@ -836,7 +831,7 @@ class OpenAIResponsesModel(Model):
         }
         if o.description:
             response_format_param['description'] = o.description
-        if o.strict:  # pragma: no branch
+        if OpenAIModelProfile.from_profile(self.profile).openai_supports_strict_tool_definition:  # pragma: no branch
             response_format_param['strict'] = o.strict
         return response_format_param
 

@@ -1264,7 +1264,7 @@ def test_output_type_multiple_custom_tools():
 
 def test_default_structured_output_mode():
     def hello(_: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
-        return ModelResponse(parts=[TextPart(content='hello')])
+        return ModelResponse(parts=[TextPart(content='hello')])  # pragma: no cover
 
     tool_model = FunctionModel(hello, profile=ModelProfile(default_structured_output_mode='tool'))
     structured_text_model = FunctionModel(
@@ -3110,7 +3110,7 @@ def test_unsupported_output_mode():
         bar: str
 
     def hello(_: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
-        return ModelResponse(parts=[TextPart('hello')])
+        return ModelResponse(parts=[TextPart('hello')])  # pragma: no cover
 
     model = FunctionModel(hello, profile=ModelProfile(supports_tools=False, supports_json_schema_response_format=False))
 
