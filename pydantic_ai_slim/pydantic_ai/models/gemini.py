@@ -221,7 +221,7 @@ class GeminiModel(Model):
         if model_request_parameters.output_mode == 'structured_text':
             if output_object := model_request_parameters.output_object:
                 if tools:
-                    raise UserError('Google does not support JSON schema output and tools at the same time.')
+                    raise UserError('Gemini does not support JSON schema output and tools at the same time.')
 
                 generation_config['response_mime_type'] = 'application/json'
                 generation_config['response_schema'] = self._map_response_schema(output_object)
