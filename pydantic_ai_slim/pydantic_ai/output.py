@@ -38,7 +38,37 @@ class ToolRetryError(Exception):
 
 @dataclass(init=False)
 class ToolOutput(Generic[OutputDataT]):
-    """Marker class to use a tool for output and optionally customize the tool."""
+    """Marker class to use a tool for output and optionally customize the tool.
+
+    Example:
+    ```python
+    from pydantic import BaseModel
+
+    from pydantic_ai import Agent, ToolOutput
+
+
+    class Fruit(BaseModel):
+        name: str
+        color: str
+
+
+    class Vehicle(BaseModel):
+        name: str
+        wheels: int
+
+
+    agent = Agent(
+        'openai:gpt-4o',
+        output_type=[
+            ToolOutput(Fruit, name='return_fruit'),
+            ToolOutput(Vehicle, name='return_vehicle'),
+        ],
+    )
+    result = agent.run_sync('What is a banana?')
+    print(repr(result.output))
+    #> Fruit(name='banana', color='yellow')
+    ```
+    """
 
     output: OutputTypeOrFunction[OutputDataT]
     name: str | None
@@ -64,7 +94,38 @@ class ToolOutput(Generic[OutputDataT]):
 
 @dataclass(init=False)
 class ModelStructuredOutput(Generic[OutputDataT]):
-    """Marker class to use the model's built-in structured outputs functionality for outputs and optionally customize the name and description."""
+    """Marker class to use the model's built-in structured outputs functionality for outputs and optionally customize the name and description.
+
+    Example:
+    ```python
+    from pydantic import BaseModel
+
+    from pydantic_ai import Agent, ModelStructuredOutput
+
+
+    class Fruit(BaseModel):
+        name: str
+        color: str
+
+
+    class Vehicle(BaseModel):
+        name: str
+        wheels: int
+
+
+    agent = Agent(
+        'openai:gpt-4o',
+        output_type=ModelStructuredOutput(
+            [Fruit, Vehicle],
+            name='Fruit or vehicle',
+            description='Return a fruit or vehicle.'
+        ),
+    )
+    result = agent.run_sync('What is a Ford Explorer?')
+    print(repr(result.output))
+    #> Vehicle(name='Ford Explorer', wheels=4)
+    ```
+    """
 
     outputs: Sequence[OutputTypeOrFunction[OutputDataT]]
     name: str | None
@@ -84,7 +145,49 @@ class ModelStructuredOutput(Generic[OutputDataT]):
 
 @dataclass(init=False)
 class PromptedStructuredOutput(Generic[OutputDataT]):
-    """Marker class to use a prompt to tell the model what to output and optionally customize the prompt."""
+    """Marker class to use a prompt to tell the model what to output and optionally customize the prompt.
+
+    Example:
+    ```python
+    from pydantic import BaseModel
+
+    from pydantic_ai import Agent, PromptedStructuredOutput
+
+
+    class Vehicle(BaseModel):
+        name: str
+        wheels: int
+
+
+    class Device(BaseModel):
+        name: str
+        kind: str
+
+
+    agent = Agent(
+        'openai:gpt-4o',
+        output_type=PromptedStructuredOutput(
+            [Vehicle, Device],
+            name='Vehicle or device',
+            description='Return a vehicle or device.'
+        ),
+    )
+    result = agent.run_sync('What is a MacBook?')
+    print(repr(result.output))
+    #> Device(name='MacBook', kind='laptop')
+
+    agent = Agent(
+        'openai:gpt-4o',
+        output_type=PromptedStructuredOutput(
+            [Vehicle, Device],
+            template='Gimme some JSON: {schema}'
+        ),
+    )
+    result = agent.run_sync('What is a Ford Explorer?')
+    print(repr(result.output))
+    #> Vehicle(name='Ford Explorer', wheels=4)
+    ```
+    """
 
     outputs: Sequence[OutputTypeOrFunction[OutputDataT]]
     name: str | None
@@ -111,7 +214,26 @@ class PromptedStructuredOutput(Generic[OutputDataT]):
 
 @dataclass
 class TextOutput(Generic[OutputDataT]):
-    """Marker class to use text output for an output function taking a string argument."""
+    """Marker class to use text output for an output function taking a string argument.
+
+    Example:
+    ```python
+    from pydantic_ai import Agent, TextOutput
+
+
+    def split_into_words(text: str) -> list[str]:
+        return text.split()
+
+
+    agent = Agent(
+        'openai:gpt-4o',
+        output_type=TextOutput(split_into_words),
+    )
+    result = agent.run_sync('Who was Albert Einstein?')
+    print(result.output)
+    #> ['Albert', 'Einstein', 'was', 'a', 'German-born', 'theoretical', 'physicist.']
+    ```
+    """
 
     output_function: TextOutputFunction[OutputDataT]
 

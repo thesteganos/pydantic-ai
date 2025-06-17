@@ -236,6 +236,8 @@ RouterFailure(explanation='I am not equipped to provide travel information, such
 """
 ```
 
+#### Text output
+
 Note that if you provide an output function that takes a string, Pydantic AI will by default create an output tool like for any other output function. If instead you'd like to the model to provide the string using plain text output, you can wrap the function in the [`TextOutput`][pydantic_ai.output.TextOutput] marker class. If desired, this marker class can be used alongside one or more [`ToolOutput`](#tool-output) marker classes (or unmarked types or functions) in a list provided to `output_type`.
 
 ```python
@@ -321,7 +323,11 @@ class Vehicle(BaseModel):
 
 agent = Agent(
     'openai:gpt-4o',
-    output_type=ModelStructuredOutput([Fruit, Vehicle]),
+    output_type=ModelStructuredOutput(
+        [Fruit, Vehicle],
+        name='Fruit or vehicle',
+        description='Return a fruit or vehicle.'
+    ),
 )
 result = agent.run_sync('What is a Ford Explorer?')
 print(repr(result.output))
@@ -354,7 +360,11 @@ class Device(BaseModel):
 
 agent = Agent(
     'openai:gpt-4o',
-    output_type=PromptedStructuredOutput([Vehicle, Device]),
+    output_type=PromptedStructuredOutput(
+        [Vehicle, Device],
+        name='Vehicle or device',
+        description='Return a vehicle or device.'
+    ),
 )
 result = agent.run_sync('What is a MacBook?')
 print(repr(result.output))
@@ -362,7 +372,10 @@ print(repr(result.output))
 
 agent = Agent(
     'openai:gpt-4o',
-    output_type=PromptedStructuredOutput([Vehicle, Device], template='Gimme some JSON: {schema}'),
+    output_type=PromptedStructuredOutput(
+        [Vehicle, Device],
+        template='Gimme some JSON: {schema}'
+    ),
 )
 result = agent.run_sync('What is a Ford Explorer?')
 print(repr(result.output))
@@ -374,7 +387,7 @@ print(repr(result.output))
 Some validation is inconvenient or impossible to do in Pydantic validators, in particular when the validation requires IO and is asynchronous. PydanticAI provides a way to add validation functions via the [`agent.output_validator`][pydantic_ai.Agent.output_validator] decorator.
 
 If you want to implement separate validation logic for different output types, it's recommended to use [output functions](#output-functions) instead, to save you from having to do `isinstance` checks inside the output validator.
-If you want the model to output plain text, do your own processing or validation, and then have the agent's final output be the result of your function, it's recommended to use an [output function](#output-functions) with the `TextOutput` [output mode](#output-modes) marker class.
+If you want the model to output plain text, do your own processing or validation, and then have the agent's final output be the result of your function, it's recommended to use an [output function](#output-functions) with the [`TextOutput` marker class](#text-output).
 
 Here's a simplified variant of the [SQL Generation example](examples/sql-gen.md):
 
