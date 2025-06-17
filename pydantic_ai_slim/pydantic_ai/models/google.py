@@ -10,9 +10,8 @@ from uuid import uuid4
 
 from typing_extensions import assert_never
 
-from pydantic_ai._output import OutputObjectDefinition
-
 from .. import UnexpectedModelBehavior, _utils, usage
+from .._output import OutputObjectDefinition
 from ..exceptions import UserError
 from ..messages import (
     BinaryContent,
@@ -54,6 +53,7 @@ try:
         FunctionDeclarationDict,
         GenerateContentConfigDict,
         GenerateContentResponse,
+        HttpOptionsDict,
         Part,
         PartDict,
         SafetySettingDict,
@@ -267,8 +267,17 @@ class GoogleModel(Model):
         tool_config = self._get_tool_config(model_request_parameters, tools)
         system_instruction, contents = await self._map_messages(messages)
 
+        http_options: HttpOptionsDict = {
+            'headers': {'Content-Type': 'application/json', 'User-Agent': get_user_agent()}
+        }
+        if timeout := model_settings.get('timeout'):
+            if isinstance(timeout, (int, float)):
+                http_options['timeout'] = int(1000 * timeout)
+            else:
+                raise UserError('Google does not support setting ModelSettings.timeout to a httpx.Timeout')
+
         config = GenerateContentConfigDict(
-            http_options={'headers': {'Content-Type': 'application/json', 'User-Agent': get_user_agent()}},
+            http_options=http_options,
             system_instruction=system_instruction,
             temperature=model_settings.get('temperature'),
             top_p=model_settings.get('top_p'),
