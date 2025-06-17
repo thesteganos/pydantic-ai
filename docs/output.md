@@ -133,8 +133,8 @@ from typing import Union
 from pydantic import BaseModel
 
 from pydantic_ai import Agent, ModelRetry, RunContext
-from pydantic_ai.output import ToolRetryError
 from pydantic_ai.exceptions import UnexpectedModelBehavior
+from pydantic_ai.output import ToolRetryError
 
 
 class Row(BaseModel):
@@ -224,43 +224,122 @@ print(result.output)
 """
 
 result = router_agent.run_sync('Select all pets')
-print(result.output)
+print(repr(result.output))
 """
-explanation = "The requested table 'pets' does not exist in the database. The only available table is 'capital_cities', which does not contain data about pets."
+RouterFailure(explanation="The requested table 'pets' does not exist in the database. The only available table is 'capital_cities', which does not contain data about pets.")
 """
 
 result = router_agent.run_sync('How do I fly from Amsterdam to Mexico City?')
+print(repr(result.output))
+"""
+RouterFailure(explanation='I am not equipped to provide travel information, such as flights from Amsterdam to Mexico City.')
+"""
+```
+
+Note that if you provide an output function that takes a string, Pydantic AI will by default create an output tool like for any other output function. If instead you'd like to the model to provide the string using plain text output, you can wrap the function in the [`TextOutput`][pydantic_ai.output.TextOutput] marker class. If desired, this marker class can be used alongside one or more [`ToolOutput`](#tool-output) marker classes (or unmarked types or functions) in a list provided to `output_type`.
+
+```python
+from pydantic_ai import Agent, TextOutput
+
+
+def split_into_words(text: str) -> list[str]:
+    return text.split()
+
+
+agent = Agent(
+    'openai:gpt-4o',
+    output_type=TextOutput(split_into_words),
+)
+result = agent.run_sync('Who was Albert Einstein?')
 print(result.output)
-"""
-explanation = 'I am not equipped to provide travel information, such as flights from Amsterdam to Mexico City.'
-"""
+#> ['Albert', 'Einstein', 'was', 'a', 'German-born', 'theoretical', 'physicist.']
 ```
 
 ### Output modes
 
 Pydantic AI implements three different methods to get a model to output structured data:
 
-1. **Tool output**, where the output JSON schema is provided to the model as the parameters schema of a special output tool. This is the default as it's supported by virtually all models and has been shown to work very well.
-2. **Structured text output** using a model API's native **"forced JSON Schema"** feature (aka "JSON Schema response format" or "Structured Outputs"), where the model is forced to only output text matching the provided JSON schema. This is currently only supported by OpenAI and Gemini and sometimes comes with restrictions (for example, Gemini cannot use tools at the same time as JSON output).
-3. **Structured text output** using [**instructions**](agents.md#instructions), where the model is prompted to output text matching the provided JSON schema and it's up to the model to interpret those instructions correctly. If the model API supports the "JSON Mode" (aka "JSON Object response format") feature to force the model to output valid JSON, this is enabled, but it's still up to the model to abide by the schema. This is usable with all models, but is the least reliable approach as the model is not forced to match the schema. Pydantic AI will validate the returned structured data and tell the model to try again if validation fails, but if the model is not intelligent enough this may not be sufficient.
+1. [Tool Output](#tool-output)
+2. [Model Structured Output](#model-structured-output)
+3. [Prompted Structured Output](#prompted-structured-output)
 
-By default, Pydantic AI will use the tool output mode and register a separate output tool for each output type (or function). If you'd like to change the name of the output tool, pass a custom description to aid the model, or turn on or off strict mode, you can wrap the type(s) in the [`ToolOutput`][pydantic_ai.output.ToolOutput] marker class and provide the appropriate arguments. Note that by default, the description is taken from the docstring specified on a Pydantic model or output function, so specifying it using the marker class is typically not necessary.
+#### Tool Output
 
-If you'd like to use the structured text output mode, you can wrap the type(s) in the [`StructuredTextOutput`][pydantic_ai.output.StructuredTextOutput] marker class that also lets you specify a name and description if the name and docstring of the type or function are not sufficient. Additionally, it supports an `instructions` argument that is `None` by default, indicating that Pydantic AI should choose the best strategy supported by the model: forced JSON schema or instructions. You can set it to `False` to never use instructions (which will result in an error if the forced JSON schema feature is not supported by the model) or `True` to always use instructions. If you'd like to use a custom instructions template instead of the [default][pydantic_ai.profiles.ModelProfile.prompted_structured_output_template], you can pass a string with a `{schema}` placeholder that will be replaced with the actual JSON schema.
+In the default Tool Output mode, the output JSON schema of each output type (or function) is provided to the model as the parameters schema of a special output tool. This is the default as it's supported by virtually all models and has been shown to work very well.
 
-Finally, if you provide an [output function](#output-functions) that takes a string, Pydantic AI will by default create an output tool like for any other output function. If instead you'd like to the model to provide the string using plain text output, you can wrap the function in the [`TextOutput`][pydantic_ai.output.TextOutput] marker class. If desired, this marker class can be used alongside one or more `ToolOutput` marker classes (or unmarked types or functions) in a list provided to `output_type`.
-
-Here's an example of these 3 output mode marker classes in action:
+If you'd like to change the name of the output tool, pass a custom description to aid the model, or turn on or off strict mode, you can wrap the type(s) in the [`ToolOutput`][pydantic_ai.output.ToolOutput] marker class and provide the appropriate arguments. Note that by default, the description is taken from the docstring specified on a Pydantic model or output function, so specifying it using the marker class is typically not necessary.
 
 ```python
 from pydantic import BaseModel
 
-from pydantic_ai import Agent, ModelStructuredOutput, PromptedStructuredOutput, TextOutput, ToolOutput
+from pydantic_ai import Agent, ToolOutput
 
 
 class Fruit(BaseModel):
     name: str
     color: str
+
+
+class Vehicle(BaseModel):
+    name: str
+    wheels: int
+
+
+agent = Agent(
+    'openai:gpt-4o',
+    output_type=[
+        ToolOutput(Fruit, name='return_fruit'),
+        ToolOutput(Vehicle, name='return_vehicle'),
+    ],
+)
+result = agent.run_sync('What is a banana?')
+print(repr(result.output))
+#> Fruit(name='banana', color='yellow')
+```
+
+#### Model Structured Output
+
+Model Structured Output mode uses a model's native "Structured Outputs" feature (aka "JSON Schema response format"), where the model is forced to only output text matching the provided JSON schema. This is currently only supported by OpenAI and Gemini and sometimes comes with restrictions. For example, Gemini cannot use tools at the same time as structured output and attempting to do so will result in an error.
+
+To use this mode, you can wrap the output type(s) in the [`ModelStructuredOutput`][pydantic_ai.output.ModelStructuredOutput] marker class that also lets you specify a `name` and `description` if the name and docstring of the type or function are not sufficient.
+
+```python
+from pydantic import BaseModel
+
+from pydantic_ai import Agent, ModelStructuredOutput
+
+
+class Fruit(BaseModel):
+    name: str
+    color: str
+
+
+class Vehicle(BaseModel):
+    name: str
+    wheels: int
+
+
+agent = Agent(
+    'openai:gpt-4o',
+    output_type=ModelStructuredOutput([Fruit, Vehicle]),
+)
+result = agent.run_sync('What is a Ford Explorer?')
+print(repr(result.output))
+#> Vehicle(name='Ford Explorer', wheels=4)
+```
+
+#### Prompted Structured Output
+
+In this mode, the model is prompted to output text matching the provided JSON schema through its [instructions](agents.md#instructions) and it's up to the model to interpret those instructions correctly. This is usable with all models, but is the least reliable approach as the model is not forced to match the schema.
+
+If the model API supports the "JSON Mode" feature (aka "JSON Object response format") to force the model to output valid JSON, this is enabled, but it's still up to the model to abide by the schema. Pydantic AI will validate the returned structured data and tell the model to try again if validation fails, but if the model is not intelligent enough this may not be sufficient.
+
+To use this mode, you can wrap the output type(s) in the [`PromptedStructuredOutput`][pydantic_ai.output.PromptedStructuredOutput] marker class that also lets you specify a `name` and `description` if the name and docstring of the type or function are not sufficient. Additionally, it supports an `template` argument lets you specify a custom instructions template to be used instead of the [default][pydantic_ai.profiles.ModelProfile.prompted_structured_output_template].
+
+```python
+from pydantic import BaseModel
+
+from pydantic_ai import Agent, PromptedStructuredOutput
 
 
 class Vehicle(BaseModel):
@@ -275,44 +354,19 @@ class Device(BaseModel):
 
 agent = Agent(
     'openai:gpt-4o',
-    output_type=[
-        ToolOutput(Fruit, name='return_fruit'),
-        ToolOutput(Vehicle, name='return_vehicle'),
-        ToolOutput(Device, name='return_device'),
-    ],
-)
-result = agent.run_sync('What is a banana?')
-print(repr(result.output))
-#> Fruit(name='banana', color='yellow')
-
-agent = Agent(
-    'openai:gpt-4o',
-    output_type=ModelStructuredOutput([Fruit, Vehicle, Device]),
-)
-result = agent.run_sync('What is a Ford Explorer?')
-print(repr(result.output))
-#> Vehicle(name='Ford Explorer', wheels=4)
-
-agent = Agent(
-    'openai:gpt-4o',
-    output_type=PromptedStructuredOutput([Fruit, Vehicle, Device]),
+    output_type=PromptedStructuredOutput([Vehicle, Device]),
 )
 result = agent.run_sync('What is a MacBook?')
 print(repr(result.output))
 #> Device(name='MacBook', kind='laptop')
 
-
-def split_into_words(text: str) -> list[str]:
-    return text.split()
-
-
 agent = Agent(
     'openai:gpt-4o',
-    output_type=TextOutput(split_into_words),
+    output_type=PromptedStructuredOutput([Vehicle, Device], template='Gimme some JSON: {schema}'),
 )
-result = agent.run_sync('Who was Albert Einstein?')
-print(result.output)
-#> ['Albert', 'Einstein', 'was', 'a', 'German-born', 'theoretical', 'physicist.']
+result = agent.run_sync('What is a Ford Explorer?')
+print(repr(result.output))
+#> Vehicle(name='Ford Explorer', wheels=4)
 ```
 
 ### Output validators {#output-validator-functions}

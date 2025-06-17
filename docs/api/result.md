@@ -4,9 +4,4 @@
     options:
         inherited_members: true
         members:
-            - OutputDataT
             - StreamedRunResult
-            - ToolOutput
-            - ModelStructuredOutput
-            - PromptedStructuredOutput
-            - TextOutput

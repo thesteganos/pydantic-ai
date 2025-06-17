@@ -93,7 +93,7 @@ class Agent(Generic[AgentDepsT, OutputDataT]):
     """Class for defining "agents" - a way to have a specific type of "conversation" with an LLM.
 
     Agents are generic in the dependency type they take [`AgentDepsT`][pydantic_ai.tools.AgentDepsT]
-    and the result data type they return, [`OutputDataT`][pydantic_ai.result.OutputDataT].
+    and the result data type they return, [`OutputDataT`][pydantic_ai.output.OutputDataT].
 
     By default, if neither generic parameter is customised, agents have type `Agent[None, str]`.
 

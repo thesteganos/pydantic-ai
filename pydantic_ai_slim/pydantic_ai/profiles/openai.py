@@ -25,9 +25,9 @@ class OpenAIModelProfile(ModelProfile):
 def openai_model_profile(model_name: str) -> ModelProfile:
     """Get the model profile for an OpenAI model."""
     is_reasoning_model = model_name.startswith('o')
-    # The JSON schema response format is only supported with the gpt-4o-mini, gpt-4o-mini-2024-07-18, and gpt-4o-2024-08-06 model snapshots and later.
+    # Structured Outputs (output mode 'model_structured') is only supported with the gpt-4o-mini, gpt-4o-mini-2024-07-18, and gpt-4o-2024-08-06 model snapshots and later.
     # We leave it in here for all models because the `default_structured_output_mode` is `'tool'`, so `model_structured` is only used
-    # when the user specifically uses the ModelStructuredOutput marker, so an error from the API is acceptable.
+    # when the user specifically uses the `ModelStructuredOutput` marker, so an error from the API is acceptable.
     return OpenAIModelProfile(
         json_schema_transformer=OpenAIJsonSchemaTransformer,
         supports_structured_output=True,
