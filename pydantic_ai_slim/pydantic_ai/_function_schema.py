@@ -8,7 +8,7 @@ from __future__ import annotations as _annotations
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from inspect import Parameter, signature
-from typing import TYPE_CHECKING, Any, Callable, cast
+from typing import TYPE_CHECKING, Any, Callable, Union, cast
 
 from pydantic import ConfigDict
 from pydantic._internal import _decorators, _generate_schema, _typing_extra
@@ -17,7 +17,7 @@ from pydantic.fields import FieldInfo
 from pydantic.json_schema import GenerateJsonSchema
 from pydantic.plugin._schema_validator import create_schema_validator
 from pydantic_core import SchemaValidator, core_schema
-from typing_extensions import get_origin
+from typing_extensions import Concatenate, ParamSpec, TypeIs, TypeVar, get_origin
 
 from ._griffe import doc_descriptions
 from ._utils import check_object_json_schema, is_async_callable, is_model_like, run_in_executor
@@ -216,7 +216,16 @@ def function_schema(  # noqa: C901
     )
 
 
-def _takes_ctx(function: Callable[..., Any]) -> bool:
+P = ParamSpec('P')
+R = TypeVar('R')
+
+
+WithCtx = Callable[Concatenate[RunContext[Any], P], R]
+WithoutCtx = Callable[P, R]
+TargetFunc = Union[WithCtx[P, R], WithoutCtx[P, R]]
+
+
+def _takes_ctx(function: TargetFunc[P, R]) -> TypeIs[WithCtx[P, R]]:
     """Check if a function takes a `RunContext` first argument.
 
     Args:
