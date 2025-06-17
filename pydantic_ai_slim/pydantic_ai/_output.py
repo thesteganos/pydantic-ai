@@ -27,7 +27,8 @@ from .output import (
     ToolRetryError,
     _flatten_output_spec,  # pyright: ignore[reportPrivateUsage]
 )
-from .tools import AgentDepsT, GenerateToolJsonSchema, ObjectJsonSchema, RunContext, ToolDefinition
+from .run_context import AgentDepsT, RunContext
+from .tools import GenerateToolJsonSchema, ObjectJsonSchema, ToolDefinition
 
 if TYPE_CHECKING:
     from .profiles import ModelProfile

@@ -21,7 +21,7 @@ from typing_extensions import Concatenate, ParamSpec, TypeIs, TypeVar, get_origi
 
 from ._griffe import doc_descriptions
 from ._utils import check_object_json_schema, is_async_callable, is_model_like, run_in_executor
-from .tools import RunContext
+from .run_context import RunContext
 
 if TYPE_CHECKING:
     from .tools import DocstringFormat, ObjectJsonSchema
