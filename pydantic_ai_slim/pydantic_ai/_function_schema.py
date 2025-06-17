@@ -21,9 +21,10 @@ from typing_extensions import Concatenate, ParamSpec, TypeIs, TypeVar, get_origi
 
 from ._griffe import doc_descriptions
 from ._utils import check_object_json_schema, is_async_callable, is_model_like, run_in_executor
+from .tools import RunContext
 
 if TYPE_CHECKING:
-    from .tools import DocstringFormat, ObjectJsonSchema, RunContext
+    from .tools import DocstringFormat, ObjectJsonSchema
 
 
 __all__ = ('function_schema',)
@@ -279,6 +280,4 @@ def _build_schema(
 
 def _is_call_ctx(annotation: Any) -> bool:
     """Return whether the annotation is the `RunContext` class, parameterized or not."""
-    from .tools import RunContext
-
     return annotation is RunContext or get_origin(annotation) is RunContext
