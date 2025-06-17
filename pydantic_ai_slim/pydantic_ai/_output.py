@@ -12,6 +12,7 @@ from pydantic_core import SchemaValidator
 from typing_extensions import TypedDict, TypeVar, assert_never
 
 from . import _function_schema, _utils, messages as _messages
+from ._run_context import AgentDepsT, RunContext
 from .exceptions import ModelRetry, UserError
 from .output import (
     ModelStructuredOutput,
@@ -27,7 +28,6 @@ from .output import (
     ToolRetryError,
     _flatten_output_spec,  # pyright: ignore[reportPrivateUsage]
 )
-from .run_context import AgentDepsT, RunContext
 from .tools import GenerateToolJsonSchema, ObjectJsonSchema, ToolDefinition
 
 if TYPE_CHECKING:

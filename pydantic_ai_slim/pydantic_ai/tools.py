@@ -13,8 +13,8 @@ from pydantic_core import SchemaValidator, core_schema
 from typing_extensions import Concatenate, ParamSpec, Self, TypeAlias, TypeVar
 
 from . import _function_schema, _utils, messages as _messages
+from ._run_context import AgentDepsT, RunContext
 from .exceptions import ModelRetry, UnexpectedModelBehavior
-from .run_context import AgentDepsT, RunContext
 
 __all__ = (
     'AgentDepsT',

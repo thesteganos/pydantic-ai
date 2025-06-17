@@ -15,12 +15,12 @@ from typing import Any, cast
 from typing_inspection.introspection import get_literal_values
 
 from . import __version__
+from ._run_context import AgentDepsT
 from .agent import Agent
 from .exceptions import UserError
 from .messages import ModelMessage
 from .models import KnownModelName, infer_model
 from .output import OutputDataT
-from .run_context import AgentDepsT
 
 try:
     import argcomplete
