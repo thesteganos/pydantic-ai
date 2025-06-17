@@ -31,7 +31,8 @@ from . import (
 )
 from ._agent_graph import HistoryProcessor
 from .models.instrumented import InstrumentationSettings, InstrumentedModel, instrument_model
-from .result import FinalResult, OutputDataT, StreamedRunResult
+from .output import OutputDataT
+from .result import FinalResult, StreamedRunResult
 from .settings import ModelSettings, merge_model_settings
 from .tools import (
     AgentDepsT,
@@ -687,10 +688,8 @@ class Agent(Generic[AgentDepsT, OutputDataT]):
             ]
 
             model_profile = model_used.profile
-            if isinstance(output_schema, _output.StructuredTextOutputSchema) and output_schema.use_instructions(
-                model_profile
-            ):
-                instructions = output_schema.instructions(model_profile.structured_output_instructions_template)
+            if isinstance(output_schema, _output.PromptedStructuredOutputSchema):
+                instructions = output_schema.instructions(model_profile.prompted_structured_output_template)
                 parts.append(instructions)
 
             parts = [p for p in parts if p]

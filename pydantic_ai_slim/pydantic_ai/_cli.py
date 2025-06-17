@@ -14,7 +14,7 @@ from typing import Any, cast
 
 from typing_inspection.introspection import get_literal_values
 
-from pydantic_ai.result import OutputDataT
+from pydantic_ai.output import OutputDataT
 from pydantic_ai.tools import AgentDepsT
 
 from . import __version__

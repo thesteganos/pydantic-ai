@@ -6,8 +6,7 @@ from typing import Callable, Union
 
 from typing_extensions import Self
 
-from pydantic_ai._output import StructuredOutputMode
-
+from ..output import StructuredOutputMode
 from ._json_schema import JsonSchemaTransformer
 
 
@@ -17,13 +16,13 @@ class ModelProfile:
 
     supports_tools: bool = True
     """Whether the model supports tools."""
-    supports_json_schema_response_format: bool = False
-    """Whether the model supports the JSON schema response format."""
-    supports_json_object_response_format: bool = False
-    """Whether the model supports the JSON object response format."""
+    supports_structured_output: bool = False
+    """Whether the model supports JSON schema output."""
+    supports_json_output: bool = False
+    """Whether the model supports JSON object output."""
     default_structured_output_mode: StructuredOutputMode = 'tool'
     """The default structured output mode to use for the model."""
-    structured_output_instructions_template: str = dedent(
+    prompted_structured_output_template: str = dedent(
         """
         Always respond with a JSON object that's compatible with this schema:
 
@@ -32,7 +31,7 @@ class ModelProfile:
         Don't include any text or Markdown fencing before or after.
         """
     )
-    """The instructions to use for prompted JSON output. The '{schema}' placeholder will be replaced with the JSON schema for the output."""
+    """The instructions template to use for prompted structured output. The '{schema}' placeholder will be replaced with the JSON schema for the output."""
     json_schema_transformer: type[JsonSchemaTransformer] | None = None
     """The transformer to use to make JSON schemas for tools and structured output compatible with the model."""
 

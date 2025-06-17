@@ -9,12 +9,24 @@ from typing import TYPE_CHECKING, Any, Callable, Generic, Literal, Union, cast, 
 
 from pydantic import TypeAdapter, ValidationError
 from pydantic_core import SchemaValidator
-from typing_extensions import TypeAliasType, TypedDict, TypeVar, assert_never, get_args, get_origin
-from typing_inspection import typing_objects
-from typing_inspection.introspection import is_union_origin
+from typing_extensions import TypedDict, TypeVar, assert_never
 
 from . import _function_schema, _utils, messages as _messages
 from .exceptions import ModelRetry, UserError
+from .output import (
+    ModelStructuredOutput,
+    OutputDataT,
+    OutputMode,
+    OutputSpec,
+    OutputTypeOrFunction,
+    PromptedStructuredOutput,
+    StructuredOutputMode,
+    TextOutput,
+    TextOutputFunction,
+    ToolOutput,
+    ToolRetryError,
+    _flatten_output_spec,  # pyright: ignore[reportPrivateUsage]
+)
 from .tools import AgentDepsT, GenerateToolJsonSchema, ObjectJsonSchema, RunContext, ToolDefinition
 
 if TYPE_CHECKING:
@@ -34,8 +46,6 @@ changing it would have negative consequences for the ergonomics of the library.
 At some point, it may make sense to change the input to OutputValidatorFunc to be `Any` or `object` as doing that would
 resolve these potential variance issues.
 """
-OutputDataT = TypeVar('OutputDataT', default=str, covariant=True)
-"""Covariant type variable for the result data type of a run."""
 
 OutputValidatorFunc = Union[
     Callable[[RunContext[AgentDepsT], OutputDataT_inv], OutputDataT_inv],
@@ -106,109 +116,6 @@ class OutputValidator(Generic[AgentDepsT, OutputDataT_inv]):
             return result_data
 
 
-class ToolRetryError(Exception):
-    """Internal exception used to signal a `ToolRetry` message should be returned to the LLM."""
-
-    def __init__(self, tool_retry: _messages.RetryPromptPart):
-        self.tool_retry = tool_retry
-        super().__init__()
-
-
-@dataclass(init=False)
-class ToolOutput(Generic[OutputDataT]):
-    """Marker class to use tools for outputs, and customize the tool."""
-
-    output: OutputTypeOrFunction[OutputDataT]
-    name: str | None
-    description: str | None
-    max_retries: int | None
-    strict: bool | None
-
-    def __init__(
-        self,
-        type_: OutputTypeOrFunction[OutputDataT],
-        *,
-        name: str | None = None,
-        description: str | None = None,
-        max_retries: int | None = None,
-        strict: bool | None = None,
-    ):
-        self.output = type_
-        self.name = name
-        self.description = description
-        self.max_retries = max_retries
-        self.strict = strict
-
-
-@dataclass
-class TextOutput(Generic[OutputDataT]):
-    """Marker class to use text output with an output function."""
-
-    output_function: TextOutputFunction[OutputDataT]
-
-
-@dataclass(init=False)
-class StructuredTextOutput(Generic[OutputDataT]):
-    """Marker class to use structured text output for outputs."""
-
-    outputs: Sequence[OutputTypeOrFunction[OutputDataT]]
-    instructions: bool | str | None
-    """Whether to use the model's built-in functionality for structured output matching a JSON schema, or to pass the JSON schema to the model as instructions.
-
-    If `None`, we'll use the model's built-in functionality if it's supported, and otherwise pass the JSON schema to the model as instructions.
-    If `True`, we'll pass the JSON schema to the model using the instructions template specified on the model's profile.
-    If `False`, we'll use the model's built-in functionality and raise an error if it's not supported.
-    If `str`, we'll pass the JSON schema to the model using the specified instructions template.
-    """
-    name: str | None
-    description: str | None
-
-    def __init__(
-        self,
-        type_: OutputTypeOrFunction[OutputDataT] | Sequence[OutputTypeOrFunction[OutputDataT]],
-        *,
-        name: str | None = None,
-        description: str | None = None,
-        instructions: bool | str | None = None,
-    ):
-        self.outputs = flatten_output_spec(type_)
-        self.name = name
-        self.description = description
-        self.instructions = instructions
-
-
-T_co = TypeVar('T_co', covariant=True)
-
-OutputTypeOrFunction = TypeAliasType(
-    'OutputTypeOrFunction', Union[type[T_co], Callable[..., Union[Awaitable[T_co], T_co]]], type_params=(T_co,)
-)
-OutputSpec = TypeAliasType(
-    'OutputSpec',
-    Union[
-        OutputTypeOrFunction[T_co],
-        ToolOutput[T_co],
-        TextOutput[T_co],
-        StructuredTextOutput[T_co],
-        Sequence[Union[OutputTypeOrFunction[T_co], ToolOutput[T_co], TextOutput[T_co]]],
-    ],
-    type_params=(T_co,),
-)
-
-TextOutputFunction = TypeAliasType(
-    'TextOutputFunction',
-    Union[
-        Callable[[RunContext, str], Union[Awaitable[T_co], T_co]],
-        Callable[[str], Union[Awaitable[T_co], T_co]],
-    ],
-    type_params=(T_co,),
-)
-
-OutputMode = Literal['text', 'tool', 'structured_text', 'tool_or_text']
-"""All output modes."""
-StructuredOutputMode = Literal['tool', 'structured_text']
-"""Output modes that can be used for structured output. Used by ModelProfile.default_structured_output_mode"""
-
-
 class BaseOutputSchema(ABC, Generic[OutputDataT]):
     @abstractmethod
     def with_default_mode(self, mode: StructuredOutputMode) -> OutputSchema[OutputDataT]:
@@ -262,20 +169,28 @@ class OutputSchema(BaseOutputSchema[OutputDataT], ABC):
         if output_spec is str:
             return PlainTextOutputSchema()
 
-        if isinstance(output_spec, StructuredTextOutput):
-            return StructuredTextOutputSchema(
+        if isinstance(output_spec, ModelStructuredOutput):
+            return ModelStructuredOutputSchema(
+                cls._build_processor(
+                    output_spec.outputs,
+                    name=output_spec.name,
+                    description=output_spec.description,
+                )
+            )
+        elif isinstance(output_spec, PromptedStructuredOutput):
+            return PromptedStructuredOutputSchema(
                 cls._build_processor(
                     output_spec.outputs,
                     name=output_spec.name,
                     description=output_spec.description,
                 ),
-                instructions=output_spec.instructions,
+                template=output_spec.template,
             )
 
         text_outputs: Sequence[type[str] | TextOutput[OutputDataT]] = []
         tool_outputs: Sequence[ToolOutput[OutputDataT]] = []
         other_outputs: Sequence[OutputTypeOrFunction[OutputDataT]] = []
-        for output in flatten_output_spec(output_spec):
+        for output in _flatten_output_spec(output_spec):
             if output is str:
                 text_outputs.append(cast(type[str], output))
             elif isinstance(output, TextOutput):
@@ -368,7 +283,7 @@ class OutputSchema(BaseOutputSchema[OutputDataT], ABC):
         description: str | None = None,
         strict: bool | None = None,
     ) -> ObjectOutputProcessor[OutputDataT] | UnionOutputProcessor[OutputDataT]:
-        outputs = flatten_output_spec(outputs)
+        outputs = _flatten_output_spec(outputs)
         if len(outputs) == 1:
             return ObjectOutputProcessor(output=outputs[0], name=name, description=description, strict=strict)
 
@@ -402,8 +317,10 @@ class OutputSchemaWithoutMode(BaseOutputSchema[OutputDataT]):
         self._tools = tools
 
     def with_default_mode(self, mode: StructuredOutputMode) -> OutputSchema[OutputDataT]:
-        if mode == 'structured_text':
-            return StructuredTextOutputSchema(self.processor)
+        if mode == 'model_structured':
+            return ModelStructuredOutputSchema(self.processor)
+        elif mode == 'prompted_structured':
+            return PromptedStructuredOutputSchema(self.processor)
         elif mode == 'tool':
             return ToolOutputSchema(self.tools)
         else:
@@ -467,22 +384,76 @@ class PlainTextOutputSchema(TextOutputSchema[OutputDataT]):
         )
 
 
-@dataclass(init=False)
-class StructuredTextOutputSchema(TextOutputSchema[OutputDataT]):
+@dataclass
+class StructuredTextOutputSchema(TextOutputSchema[OutputDataT], ABC):
     processor: ObjectOutputProcessor[OutputDataT] | UnionOutputProcessor[OutputDataT]
-    _instructions: bool | str | None = None
-
-    def __init__(
-        self,
-        processor: ObjectOutputProcessor[OutputDataT] | UnionOutputProcessor[OutputDataT],
-        instructions: bool | str | None = None,
-    ):
-        self.processor = processor
-        self._instructions = instructions
 
     @property
     def object_def(self) -> OutputObjectDefinition:
         return self.processor.object_def
+
+
+@dataclass
+class ModelStructuredOutputSchema(StructuredTextOutputSchema[OutputDataT]):
+    @property
+    def mode(self) -> OutputMode:
+        return 'model_structured'
+
+    def raise_if_unsupported(self, profile: ModelProfile) -> None:
+        """Raise an error if the mode is not supported by the model."""
+        if not profile.supports_structured_output:
+            raise UserError('Structured output is not supported by the model.')
+
+    async def process(
+        self,
+        text: str,
+        run_context: RunContext[AgentDepsT],
+        allow_partial: bool = False,
+        wrap_validation_errors: bool = True,
+    ) -> OutputDataT:
+        """Validate an output message.
+
+        Args:
+            text: The output text to validate.
+            run_context: The current run context.
+            allow_partial: If true, allow partial validation.
+            wrap_validation_errors: If true, wrap the validation errors in a retry message.
+
+        Returns:
+            Either the validated output data (left) or a retry message (right).
+        """
+        return await self.processor.process(
+            text, run_context, allow_partial=allow_partial, wrap_validation_errors=wrap_validation_errors
+        )
+
+
+@dataclass
+class PromptedStructuredOutputSchema(StructuredTextOutputSchema[OutputDataT]):
+    template: str | None = None
+
+    @property
+    def mode(self) -> OutputMode:
+        return 'prompted_structured'
+
+    def raise_if_unsupported(self, profile: ModelProfile) -> None:
+        """Raise an error if the mode is not supported by the model."""
+        pass
+
+    def instructions(self, default_template: str) -> str:
+        """Get instructions to tell model to output JSON matching the schema."""
+        template = self.template or default_template
+
+        if '{schema}' not in template:
+            template = '\n\n'.join([template, '{schema}'])
+
+        object_def = self.object_def
+        schema = object_def.json_schema.copy()
+        if object_def.name:
+            schema['title'] = object_def.name
+        if object_def.description:
+            schema['description'] = object_def.description
+
+        return template.format(schema=json.dumps(schema))
 
     async def process(
         self,
@@ -507,40 +478,6 @@ class StructuredTextOutputSchema(TextOutputSchema[OutputDataT]):
         return await self.processor.process(
             text, run_context, allow_partial=allow_partial, wrap_validation_errors=wrap_validation_errors
         )
-
-    @property
-    def mode(self) -> OutputMode:
-        return 'structured_text'
-
-    def raise_if_unsupported(self, profile: ModelProfile) -> None:
-        """Raise an error if the mode is not supported by the model."""
-        if self._instructions is False and not profile.supports_json_schema_response_format:
-            raise UserError('Structured output without using instructions is not supported by the model.')
-
-    def use_instructions(self, profile: ModelProfile) -> bool:
-        if isinstance(self._instructions, bool):
-            return self._instructions
-        elif isinstance(self._instructions, str):
-            return True
-        else:
-            return not profile.supports_json_schema_response_format
-
-    def instructions(self, template: str) -> str:
-        """Get instructions to tell model to output JSON matching the schema."""
-        if isinstance(self._instructions, str):
-            template = self._instructions
-
-        if '{schema}' not in template:
-            template = '\n\n'.join([template, '{schema}'])
-
-        object_def = self.object_def
-        schema = object_def.json_schema.copy()
-        if object_def.name:
-            schema['title'] = object_def.name
-        if object_def.description:
-            schema['description'] = object_def.description
-
-        return template.format(schema=json.dumps(schema))
 
 
 @dataclass(init=False)
@@ -972,31 +909,3 @@ class OutputTool(Generic[OutputDataT]):
                 raise  # pragma: lax no cover
         else:
             return output
-
-
-def get_union_args(tp: Any) -> tuple[Any, ...]:
-    """Extract the arguments of a Union type if `output_type` is a union, otherwise return an empty tuple."""
-    if typing_objects.is_typealiastype(tp):
-        tp = tp.__value__
-
-    origin = get_origin(tp)
-    if is_union_origin(origin):
-        return get_args(tp)
-    else:
-        return ()
-
-
-def flatten_output_spec(output_spec: T | Sequence[T]) -> list[T]:
-    outputs: Sequence[T]
-    if isinstance(output_spec, Sequence):
-        outputs = output_spec
-    else:
-        outputs = (output_spec,)
-
-    outputs_flat: list[T] = []
-    for output in outputs:
-        if union_types := get_union_args(output):
-            outputs_flat.extend(union_types)
-        else:
-            outputs_flat.append(output)
-    return outputs_flat

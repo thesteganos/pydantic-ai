@@ -281,11 +281,14 @@ class OpenAIModel(Model):
         openai_messages = await self._map_messages(messages)
 
         response_format: chat.completion_create_params.ResponseFormat | None = None
-        if model_request_parameters.output_mode == 'structured_text':
-            if output_object := model_request_parameters.output_object:
-                response_format = self._map_json_schema(output_object)
-            elif self.profile.supports_json_object_response_format:  # pragma: no branch
-                response_format = {'type': 'json_object'}
+        if model_request_parameters.output_mode == 'model_structured':
+            output_object = model_request_parameters.output_object
+            assert output_object is not None
+            response_format = self._map_json_schema(output_object)
+        elif (
+            model_request_parameters.output_mode == 'prompted_structured' and self.profile.supports_json_output
+        ):  # pragma: no branch
+            response_format = {'type': 'json_object'}
 
         sampling_settings = (
             model_settings
@@ -694,18 +697,21 @@ class OpenAIResponsesModel(Model):
         reasoning = self._get_reasoning(model_settings)
 
         text: responses.ResponseTextConfigParam | None = None
-        if model_request_parameters.output_mode == 'structured_text':
-            if output_object := model_request_parameters.output_object:
-                text = {'format': self._map_json_schema(output_object)}
-            elif self.profile.supports_json_object_response_format:  # pragma: no branch
-                text = {'format': {'type': 'json_object'}}
+        if model_request_parameters.output_mode == 'model_structured':
+            output_object = model_request_parameters.output_object
+            assert output_object is not None
+            text = {'format': self._map_json_schema(output_object)}
+        elif (
+            model_request_parameters.output_mode == 'prompted_structured' and self.profile.supports_json_output
+        ):  # pragma: no branch
+            text = {'format': {'type': 'json_object'}}
 
-                # Without this trick, we'd hit this error:
-                # > Response input messages must contain the word 'json' in some form to use 'text.format' of type 'json_object'.
-                # Apparently they're only checking input messages for "JSON", not instructions.
-                assert isinstance(instructions, str)
-                openai_messages.insert(0, responses.EasyInputMessageParam(role='system', content=instructions))
-                instructions = NOT_GIVEN
+            # Without this trick, we'd hit this error:
+            # > Response input messages must contain the word 'json' in some form to use 'text.format' of type 'json_object'.
+            # Apparently they're only checking input messages for "JSON", not instructions.
+            assert isinstance(instructions, str)
+            openai_messages.insert(0, responses.EasyInputMessageParam(role='system', content=instructions))
+            instructions = NOT_GIVEN
 
         sampling_settings = (
             model_settings

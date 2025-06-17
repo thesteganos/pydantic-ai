@@ -7,5 +7,6 @@
             - OutputDataT
             - StreamedRunResult
             - ToolOutput
-            - StructuredTextOutput
+            - ModelStructuredOutput
+            - PromptedStructuredOutput
             - TextOutput

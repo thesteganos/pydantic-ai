@@ -12,19 +12,19 @@ from typing_extensions import TypeVar, deprecated, overload
 
 from . import _utils, exceptions, messages as _messages, models
 from ._output import (
-    OutputDataT,
     OutputDataT_inv,
     OutputSchema,
     OutputValidator,
     OutputValidatorFunc,
     PlainTextOutputSchema,
-    StructuredTextOutput,
-    TextOutput,
     TextOutputSchema,
-    ToolOutput,
     ToolOutputSchema,
 )
 from .messages import AgentStreamEvent, FinalResultEvent
+from .output import (
+    OutputDataT,
+    ToolOutput,
+)
 from .tools import AgentDepsT, RunContext
 from .usage import Usage, UsageLimits
 
@@ -32,8 +32,6 @@ __all__ = (
     'OutputDataT',
     'OutputDataT_inv',
     'ToolOutput',
-    'TextOutput',
-    'StructuredTextOutput',
     'OutputValidatorFunc',
 )
 

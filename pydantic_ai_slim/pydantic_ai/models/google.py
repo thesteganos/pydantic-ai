@@ -252,15 +252,17 @@ class GoogleModel(Model):
 
         response_mime_type = None
         response_schema = None
-        if model_request_parameters.output_mode == 'structured_text':
-            if output_object := model_request_parameters.output_object:
-                if tools:
-                    raise UserError('Gemini does not support JSON schema output and tools at the same time.')
+        if model_request_parameters.output_mode == 'model_structured':
+            if tools:
+                raise UserError('Gemini does not support structured output and tools at the same time.')
 
-                response_mime_type = 'application/json'
-                response_schema = self._map_response_schema(output_object)
-            elif not tools:
-                response_mime_type = 'application/json'
+            response_mime_type = 'application/json'
+
+            output_object = model_request_parameters.output_object
+            assert output_object is not None
+            response_schema = self._map_response_schema(output_object)
+        elif model_request_parameters.output_mode == 'prompted_structured' and not tools:
+            response_mime_type = 'application/json'
 
         tool_config = self._get_tool_config(model_request_parameters, tools)
         system_instruction, contents = await self._map_messages(messages)

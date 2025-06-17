@@ -17,7 +17,7 @@ from pydantic_graph import BaseNode, Graph, GraphRunContext
 from pydantic_graph.nodes import End, NodeRunEndT
 
 from . import _output, _system_prompt, exceptions, messages as _messages, models, result, usage as _usage
-from .result import OutputDataT
+from .output import OutputDataT
 from .settings import ModelSettings, merge_model_settings
 from .tools import RunContext, Tool, ToolDefinition, ToolsPrepareFunc
 
@@ -271,17 +271,15 @@ async def _prepare_request_parameters(
         function_tool_defs = await ctx.deps.prepare_tools(run_context, function_tool_defs) or []
 
     output_schema = ctx.deps.output_schema
-    model_profile = ctx.deps.model.profile
 
     output_tools = []
     output_object = None
     if isinstance(output_schema, _output.ToolOutputSchema):
         output_tools = output_schema.tool_defs()
-    elif isinstance(output_schema, _output.StructuredTextOutputSchema):
-        if not output_schema.use_instructions(model_profile):
-            output_object = output_schema.object_def
+    elif isinstance(output_schema, _output.ModelStructuredOutputSchema):
+        output_object = output_schema.object_def
 
-    # Both ToolOrTextOutputSchema and StructuredTextOutputSchema inherit from TextOutputSchema
+    # ToolOrTextOutputSchema, ModelStructuredOutputSchema, and PromptedStructuredOutputSchema all inherit from TextOutputSchema
     allow_text_output = isinstance(output_schema, _output.TextOutputSchema)
 
     return models.ModelRequestParameters(

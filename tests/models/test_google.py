@@ -35,7 +35,8 @@ from pydantic_ai.messages import (
     UserPromptPart,
     VideoUrl,
 )
-from pydantic_ai.result import StructuredTextOutput, TextOutput, ToolOutput, Usage
+from pydantic_ai.output import ModelStructuredOutput, PromptedStructuredOutput, TextOutput, ToolOutput
+from pydantic_ai.result import Usage
 
 from ..conftest import IsDatetime, IsInstance, IsStr, try_import
 
@@ -961,24 +962,24 @@ async def test_google_text_output_function(allow_model_requests: None, google_pr
     )
 
 
-async def test_google_structured_text_output_with_tools(allow_model_requests: None, google_provider: GoogleProvider):
+async def test_google_model_structured_output_with_tools(allow_model_requests: None, google_provider: GoogleProvider):
     m = GoogleModel('gemini-2.0-flash', provider=google_provider)
 
     class CityLocation(BaseModel):
         city: str
         country: str
 
-    agent = Agent(m, output_type=StructuredTextOutput(CityLocation))
+    agent = Agent(m, output_type=ModelStructuredOutput(CityLocation))
 
     @agent.tool_plain
     async def get_user_country() -> str:
         return 'Mexico'  # pragma: no cover
 
-    with pytest.raises(UserError, match='Gemini does not support JSON schema output and tools at the same time.'):
+    with pytest.raises(UserError, match='Gemini does not support structured output and tools at the same time.'):
         await agent.run('What is the largest city in the user country?')
 
 
-async def test_google_structured_text_output(allow_model_requests: None, google_provider: GoogleProvider):
+async def test_google_model_structured_output(allow_model_requests: None, google_provider: GoogleProvider):
     m = GoogleModel('gemini-2.0-flash', provider=google_provider)
 
     class CityLocation(BaseModel):
@@ -987,7 +988,7 @@ async def test_google_structured_text_output(allow_model_requests: None, google_
         city: str
         country: str
 
-    agent = Agent(m, output_type=StructuredTextOutput(CityLocation))
+    agent = Agent(m, output_type=ModelStructuredOutput(CityLocation))
 
     result = await agent.run('What is the largest city in Mexico?')
     assert result.output == snapshot(CityLocation(city='Mexico City', country='Mexico'))
@@ -1028,7 +1029,7 @@ async def test_google_structured_text_output(allow_model_requests: None, google_
     )
 
 
-async def test_google_structured_text_output_multiple(allow_model_requests: None, google_provider: GoogleProvider):
+async def test_google_model_structured_output_multiple(allow_model_requests: None, google_provider: GoogleProvider):
     m = GoogleModel('gemini-2.0-flash', provider=google_provider)
 
     class CityLocation(BaseModel):
@@ -1039,7 +1040,7 @@ async def test_google_structured_text_output_multiple(allow_model_requests: None
         country: str
         language: str
 
-    agent = Agent(m, output_type=StructuredTextOutput([CityLocation, CountryLanguage]))
+    agent = Agent(m, output_type=ModelStructuredOutput([CityLocation, CountryLanguage]))
 
     result = await agent.run('What is the primarily language spoken in Mexico?')
     assert result.output == snapshot(CountryLanguage(country='Mexico', language='Spanish'))
@@ -1085,16 +1086,14 @@ async def test_google_structured_text_output_multiple(allow_model_requests: None
     )
 
 
-async def test_google_structured_text_output_with_instructions(
-    allow_model_requests: None, google_provider: GoogleProvider
-):
+async def test_google_prompted_structured_output(allow_model_requests: None, google_provider: GoogleProvider):
     m = GoogleModel('gemini-2.0-flash', provider=google_provider)
 
     class CityLocation(BaseModel):
         city: str
         country: str
 
-    agent = Agent(m, output_type=StructuredTextOutput(CityLocation, instructions=True))
+    agent = Agent(m, output_type=PromptedStructuredOutput(CityLocation))
 
     result = await agent.run('What is the largest city in Mexico?')
     assert result.output == snapshot(CityLocation(city='Mexico City', country='Mexico'))
@@ -1137,7 +1136,7 @@ Don't include any text or Markdown fencing before or after.\
     )
 
 
-async def test_google_structured_text_output_with_instructions_with_tools(
+async def test_google_prompted_structured_output_with_tools(
     allow_model_requests: None, google_provider: GoogleProvider
 ):
     m = GoogleModel('gemini-2.5-pro-preview-05-06', provider=google_provider)
@@ -1146,7 +1145,7 @@ async def test_google_structured_text_output_with_instructions_with_tools(
         city: str
         country: str
 
-    agent = Agent(m, output_type=StructuredTextOutput(CityLocation, instructions=True))
+    agent = Agent(m, output_type=PromptedStructuredOutput(CityLocation))
 
     @agent.tool_plain
     async def get_user_country() -> str:
@@ -1229,9 +1228,7 @@ Don't include any text or Markdown fencing before or after.\
     )
 
 
-async def test_google_structured_text_output_with_instructions_multiple(
-    allow_model_requests: None, google_provider: GoogleProvider
-):
+async def test_google_prompted_structured_output_multiple(allow_model_requests: None, google_provider: GoogleProvider):
     m = GoogleModel('gemini-2.0-flash', provider=google_provider)
 
     class CityLocation(BaseModel):
@@ -1242,7 +1239,7 @@ async def test_google_structured_text_output_with_instructions_multiple(
         country: str
         language: str
 
-    agent = Agent(m, output_type=StructuredTextOutput([CityLocation, CountryLanguage], instructions=True))
+    agent = Agent(m, output_type=PromptedStructuredOutput([CityLocation, CountryLanguage]))
 
     result = await agent.run('What is the largest city in Mexico?')
     assert result.output == snapshot(CityLocation(city='Mexico City', country='Mexico'))
