@@ -16,12 +16,6 @@ OutputDataT = TypeVar('OutputDataT', default=str, covariant=True)
 
 T = TypeVar('T')
 
-T_co = TypeVar('T_co', covariant=True)
-
-OutputTypeOrFunction = TypeAliasType(
-    'OutputTypeOrFunction', Union[type[T_co], Callable[..., Union[Awaitable[T_co], T_co]]], type_params=(T_co,)
-)
-
 OutputMode = Literal['text', 'tool', 'model_structured', 'prompted_structured', 'tool_or_text']
 """All output modes."""
 StructuredOutputMode = Literal['tool', 'model_structured', 'prompted_structured']
@@ -265,6 +259,12 @@ def _flatten_output_spec(output_spec: T | Sequence[T]) -> list[T]:
             outputs_flat.append(output)
     return outputs_flat
 
+
+T_co = TypeVar('T_co', covariant=True)
+
+OutputTypeOrFunction = TypeAliasType(
+    'OutputTypeOrFunction', Union[type[T_co], Callable[..., Union[Awaitable[T_co], T_co]]], type_params=(T_co,)
+)
 
 OutputSpec = TypeAliasType(
     'OutputSpec',

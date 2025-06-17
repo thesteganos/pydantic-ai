@@ -17,7 +17,7 @@ from pydantic_graph import BaseNode, Graph, GraphRunContext
 from pydantic_graph.nodes import End, NodeRunEndT
 
 from . import _output, _system_prompt, exceptions, messages as _messages, models, result, usage as _usage
-from .output import OutputDataT
+from .output import OutputDataT, OutputSpec
 from .settings import ModelSettings, merge_model_settings
 from .tools import RunContext, Tool, ToolDefinition, ToolsPrepareFunc
 
@@ -877,7 +877,7 @@ def get_captured_run_messages() -> _RunMessages:
 def build_agent_graph(
     name: str | None,
     deps_type: type[DepsT],
-    output_type: _output.OutputSpec[OutputT],
+    output_type: OutputSpec[OutputT],
 ) -> Graph[GraphAgentState, GraphAgentDeps[DepsT, result.FinalResult[OutputT]], result.FinalResult[OutputT]]:
     """Build the execution [Graph][pydantic_graph.Graph] for a given agent."""
     nodes = (
