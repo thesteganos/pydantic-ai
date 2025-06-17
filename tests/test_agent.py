@@ -1268,9 +1268,13 @@ def test_default_structured_output_mode():
         return ModelResponse(parts=[TextPart(content='hello')])  # pragma: no cover
 
     tool_model = FunctionModel(hello, profile=ModelProfile(default_structured_output_mode='tool'))
-    structured_text_model = FunctionModel(
+    model_structured_model = FunctionModel(
         hello,
-        profile=ModelProfile(supports_structured_output=True, default_structured_output_mode='prompted_structured'),
+        profile=ModelProfile(supports_structured_output=True, default_structured_output_mode='model_structured'),
+    )
+    prompted_structured_model = FunctionModel(
+        hello,
+        profile=ModelProfile(default_structured_output_mode='prompted_structured'),
     )
 
     class Foo(BaseModel):
@@ -1279,8 +1283,11 @@ def test_default_structured_output_mode():
     tool_agent = Agent(tool_model, output_type=Foo)
     assert tool_agent._output_schema.mode == 'tool'  # type: ignore[reportPrivateUsage]
 
-    structured_agent = Agent(structured_text_model, output_type=Foo)
-    assert structured_agent._output_schema.mode == 'prompted_structured'  # type: ignore[reportPrivateUsage]
+    model_structured_agent = Agent(model_structured_model, output_type=Foo)
+    assert model_structured_agent._output_schema.mode == 'model_structured'  # type: ignore[reportPrivateUsage]
+
+    prompted_structured_agent = Agent(prompted_structured_model, output_type=Foo)
+    assert prompted_structured_agent._output_schema.mode == 'prompted_structured'  # type: ignore[reportPrivateUsage]
 
 
 def test_prompted_structured_output():
