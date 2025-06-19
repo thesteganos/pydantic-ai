@@ -52,8 +52,8 @@ class BaseToolset(ABC, Generic[AgentDepsT]):
     async def list_tool_defs(self, ctx: RunContext[AgentDepsT]) -> list[ToolDefinition]:
         raise NotImplementedError()
 
-    async def list_tool_names(self, ctx: RunContext[AgentDepsT]) -> set[str]:
-        return {tool_def.name for tool_def in await self.list_tool_defs(ctx)}
+    async def list_tool_names(self, ctx: RunContext[AgentDepsT]) -> list[str]:
+        return [tool_def.name for tool_def in await self.list_tool_defs(ctx)]
 
     @abstractmethod
     async def get_tool_args_validator(self, ctx: RunContext[AgentDepsT], name: str) -> SchemaValidator:
@@ -244,13 +244,13 @@ class CombinedToolset(BaseToolset[AgentDepsT]):
     async def list_tool_defs(self, ctx: RunContext[AgentDepsT]) -> list[ToolDefinition]:
         return [tool_def for toolset in self.toolsets for tool_def in await toolset.list_tool_defs(ctx)]
 
-    async def list_tool_names(self, ctx: RunContext[AgentDepsT]) -> set[str]:
-        names: set[str] = set()
+    async def list_tool_names(self, ctx: RunContext[AgentDepsT]) -> list[str]:
+        names: list[str] = []
         for toolset in self.toolsets:
             new_names = await toolset.list_tool_names(ctx)
-            if duplicates := new_names & names:
+            if duplicates := set(new_names) & set(names):
                 raise ValueError(f'Toolset {toolset} has conflicting tool names: {duplicates}')
-            names.update(new_names)
+            names.extend(new_names)
         return names
 
     async def get_tool_args_validator(self, ctx: RunContext[AgentDepsT], name: str) -> SchemaValidator:

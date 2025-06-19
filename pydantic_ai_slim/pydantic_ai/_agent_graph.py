@@ -805,9 +805,10 @@ async def _unknown_tool(
     ctx.state.increment_retries(ctx.deps.max_result_retries)
 
     run_context = build_run_context(ctx)
-    tool_names = await ctx.deps.toolset.list_tool_names(run_context) | await ctx.deps.output_toolset.list_tool_names(
-        run_context
-    )
+    tool_names = [
+        *await ctx.deps.toolset.list_tool_names(run_context),
+        *await ctx.deps.output_toolset.list_tool_names(run_context),
+    ]
 
     if tool_names:
         msg = f'Available tools: {", ".join(tool_names)}'
