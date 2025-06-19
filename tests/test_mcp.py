@@ -1,5 +1,7 @@
 """Tests for the MCP (Model Context Protocol) server implementation."""
 
+from __future__ import annotations
+
 import re
 from pathlib import Path
 from typing import Any, Final

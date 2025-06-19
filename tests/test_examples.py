@@ -10,7 +10,7 @@ from inspect import FrameInfo
 from io import StringIO
 from pathlib import Path
 from types import ModuleType
-from typing import Any, cast
+from typing import Any
 
 import httpx
 import pytest
@@ -23,7 +23,6 @@ from rich.console import Console
 from pydantic_ai import ModelHTTPError
 from pydantic_ai._utils import group_by_temporal
 from pydantic_ai.exceptions import UnexpectedModelBehavior
-from pydantic_ai.mcp import MCPServer
 from pydantic_ai.messages import (
     ModelMessage,
     ModelResponse,
@@ -270,7 +269,7 @@ class MockMCPServer:
         return None
 
     def as_toolset(self, max_retries: int = 1) -> BaseToolset:
-        return MCPToolset(cast(MCPServer, self), max_retries=max_retries)
+        return MCPToolset(self, max_retries=max_retries)  # type: ignore
 
 
 text_responses: dict[str, str | ToolCallPart] = {

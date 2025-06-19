@@ -8,10 +8,11 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass, field, replace
 from functools import partial
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Callable, Generic, Self
+from typing import TYPE_CHECKING, Any, Callable, Generic
 
 from pydantic.json_schema import GenerateJsonSchema
 from pydantic_core import SchemaValidator, core_schema
+from typing_extensions import Self
 
 from ._output import BaseOutputSchema
 from ._run_context import AgentDepsT, RunContext
