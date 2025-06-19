@@ -486,15 +486,15 @@ def test_init_tool_plain():
     result = agent.run_sync('foobar')
     assert result.output == snapshot('{"plain_tool":1}')
     assert call_args == snapshot([0])
-    assert agent._function_tools['plain_tool'].takes_ctx is False
-    assert agent._function_tools['plain_tool'].max_retries == 7
+    assert agent._function_toolset._tools['plain_tool'].takes_ctx is False
+    assert agent._function_toolset._tools['plain_tool'].max_retries == 7
 
     agent_infer = Agent('test', tools=[plain_tool], retries=7)
     result = agent_infer.run_sync('foobar')
     assert result.output == snapshot('{"plain_tool":1}')
     assert call_args == snapshot([0, 0])
-    assert agent_infer._function_tools['plain_tool'].takes_ctx is False
-    assert agent_infer._function_tools['plain_tool'].max_retries == 7
+    assert agent_infer._function_toolset._tools['plain_tool'].takes_ctx is False
+    assert agent_infer._function_toolset._tools['plain_tool'].max_retries == 7
 
 
 def ctx_tool(ctx: RunContext[int], x: int) -> int:
@@ -506,13 +506,13 @@ def test_init_tool_ctx():
     agent = Agent('test', tools=[Tool(ctx_tool, takes_ctx=True, max_retries=3)], deps_type=int, retries=7)
     result = agent.run_sync('foobar', deps=5)
     assert result.output == snapshot('{"ctx_tool":5}')
-    assert agent._function_tools['ctx_tool'].takes_ctx is True
-    assert agent._function_tools['ctx_tool'].max_retries == 3
+    assert agent._function_toolset._tools['ctx_tool'].takes_ctx is True
+    assert agent._function_toolset._tools['ctx_tool'].max_retries == 3
 
     agent_infer = Agent('test', tools=[ctx_tool], deps_type=int)
     result = agent_infer.run_sync('foobar', deps=6)
     assert result.output == snapshot('{"ctx_tool":6}')
-    assert agent_infer._function_tools['ctx_tool'].takes_ctx is True
+    assert agent_infer._function_toolset._tools['ctx_tool'].takes_ctx is True
 
 
 def test_repeat_tool_by_rename():
@@ -1044,7 +1044,7 @@ def test_dynamic_tools_agent_wide():
     with agent.override(model=FunctionModel(get_json_schema)):
         result = agent.run_sync('', deps=21)
         json_schema = json.loads(result.output)
-        assert agent._function_tools['foobar'].strict is None
+        assert agent._function_toolset._tools['foobar'].strict is None
         assert json_schema['strict'] is True
 
     result = agent.run_sync('', deps=1)
@@ -1071,8 +1071,8 @@ def test_function_tool_consistent_with_schema():
     agent = Agent('test', tools=[pydantic_tool], retries=0)
     result = agent.run_sync('foobar')
     assert result.output == snapshot('{"foobar":"I like being called like this"}')
-    assert agent._function_tools['foobar'].takes_ctx is False
-    assert agent._function_tools['foobar'].max_retries == 0
+    assert agent._function_toolset._tools['foobar'].takes_ctx is False
+    assert agent._function_toolset._tools['foobar'].max_retries == 0
 
 
 def test_function_tool_inconsistent_with_schema():
@@ -1118,5 +1118,5 @@ def test_async_function_tool_consistent_with_schema():
     agent = Agent('test', tools=[pydantic_tool], retries=0)
     result = agent.run_sync('foobar')
     assert result.output == snapshot('{"foobar":"I like being called like this"}')
-    assert agent._function_tools['foobar'].takes_ctx is False
-    assert agent._function_tools['foobar'].max_retries == 0
+    assert agent._function_toolset._tools['foobar'].takes_ctx is False
+    assert agent._function_toolset._tools['foobar'].max_retries == 0

@@ -9,7 +9,7 @@ from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontext
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 import anyio
 import httpx
@@ -31,12 +31,14 @@ from mcp.types import (
     RequestParams,
     TextContent,
     TextResourceContents,
+    Tool as MCPTool,
 )
 from typing_extensions import Self, assert_never, deprecated
 
-from pydantic_ai.exceptions import ModelRetry
-from pydantic_ai.messages import BinaryContent
-from pydantic_ai.tools import RunContext, ToolDefinition
+from ._run_context import RunContext
+from .exceptions import ModelRetry, UserError
+from .messages import BinaryContent
+from .toolset import BaseToolset, MCPToolset, PrefixedToolset, ProcessedToolset, ToolsProcessFunc
 
 try:
     from mcp.client.session import ClientSession
@@ -96,30 +98,17 @@ class MCPServer(ABC):
     def _get_client_initialize_timeout(self) -> float:
         return 5  # pragma: no cover
 
-    def get_prefixed_tool_name(self, tool_name: str) -> str:
-        """Get the tool name with prefix if `tool_prefix` is set."""
-        return f'{self.tool_prefix}_{tool_name}' if self.tool_prefix else tool_name
-
-    def get_unprefixed_tool_name(self, tool_name: str) -> str:
-        """Get original tool name without prefix for calling tools."""
-        return tool_name.removeprefix(f'{self.tool_prefix}_') if self.tool_prefix else tool_name
-
-    async def list_tools(self) -> list[ToolDefinition]:
+    async def list_tools(self) -> list[MCPTool]:
         """Retrieve tools that are currently active on the server.
 
         Note:
         - We don't cache tools as they might change.
         - We also don't subscribe to the server to avoid complexity.
         """
-        tools = await self._client.list_tools()
-        return [
-            ToolDefinition(
-                name=self.get_prefixed_tool_name(tool.name),
-                description=tool.description or '',
-                parameters_json_schema=tool.inputSchema,
-            )
-            for tool in tools.tools
-        ]
+        if not self.is_running:  # pragma: no cover
+            raise UserError(f'MCP server is not running: {self}')
+        result = await self._client.list_tools()
+        return result.tools
 
     async def call_tool(
         self,
@@ -140,6 +129,8 @@ class MCPServer(ABC):
         Raises:
             ModelRetry: If the tool call fails.
         """
+        if not self.is_running:  # pragma: no cover
+            raise UserError(f'MCP server is not running: {self}')
         try:
             # meta param is not provided by session yet, so build and can send_request directly.
             result = await self._client.send_request(
@@ -147,7 +138,7 @@ class MCPServer(ABC):
                     CallToolRequest(
                         method='tools/call',
                         params=CallToolRequestParams(
-                            name=self.get_unprefixed_tool_name(tool_name),
+                            name=tool_name,
                             arguments=arguments,
                             _meta=RequestParams.Meta(**metadata) if metadata else None,
                         ),
@@ -167,6 +158,16 @@ class MCPServer(ABC):
         if len(content) == 1:
             return content[0]
         return content
+
+    def as_toolset(self, max_retries: int = 1) -> BaseToolset:
+        toolset = MCPToolset(self, max_retries=max_retries)
+        if self.process_tool_call:
+            toolset = ProcessedToolset(
+                toolset, cast(ToolsProcessFunc, self.process_tool_call)
+            )  # TODO: What to do with the extra metadata arg?
+        if self.tool_prefix:
+            toolset = PrefixedToolset(toolset, self.tool_prefix)
+        return toolset
 
     async def __aenter__(self) -> Self:
         self._exit_stack = AsyncExitStack()
@@ -255,7 +256,7 @@ class MCPServerStdio(MCPServer):
     agent = Agent('openai:gpt-4o', mcp_servers=[server])
 
     async def main():
-        async with agent.run_mcp_servers():  # (2)!
+        async with agent.run_toolsets():  # (2)!
             ...
     ```
 
@@ -481,7 +482,7 @@ class MCPServerSSE(_MCPServerHTTP):
     agent = Agent('openai:gpt-4o', mcp_servers=[server])
 
     async def main():
-        async with agent.run_mcp_servers():  # (2)!
+        async with agent.run_toolsets():  # (2)!
             ...
     ```
 
@@ -515,7 +516,7 @@ class MCPServerHTTP(MCPServerSSE):
     agent = Agent('openai:gpt-4o', mcp_servers=[server])
 
     async def main():
-        async with agent.run_mcp_servers():  # (2)!
+        async with agent.run_toolsets():  # (2)!
             ...
     ```
 
@@ -544,7 +545,7 @@ class MCPServerStreamableHTTP(_MCPServerHTTP):
     agent = Agent('openai:gpt-4o', mcp_servers=[server])
 
     async def main():
-        async with agent.run_mcp_servers():  # (2)!
+        async with agent.run_toolsets():  # (2)!
             ...
     ```
     """

@@ -26,6 +26,7 @@ class LangChainTool(Protocol):
 __all__ = ('tool_from_langchain',)
 
 
+# TODO: LangchainToolset?
 def tool_from_langchain(langchain_tool: LangChainTool) -> Tool:
     """Creates a Pydantic tool proxy from a LangChain tool.
 

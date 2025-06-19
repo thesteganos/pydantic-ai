@@ -10,7 +10,7 @@ from inspect import FrameInfo
 from io import StringIO
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -23,6 +23,7 @@ from rich.console import Console
 from pydantic_ai import ModelHTTPError
 from pydantic_ai._utils import group_by_temporal
 from pydantic_ai.exceptions import UnexpectedModelBehavior
+from pydantic_ai.mcp import MCPServer
 from pydantic_ai.messages import (
     ModelMessage,
     ModelResponse,
@@ -36,6 +37,7 @@ from pydantic_ai.models import KnownModelName, Model, infer_model
 from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.toolset import BaseToolset, MCPToolset
 
 from .conftest import ClientWithHandler, TestEnv, try_import
 
@@ -261,9 +263,14 @@ class MockMCPServer:
     async def __aexit__(self, *args: Any) -> None:
         pass
 
-    @staticmethod
-    async def list_tools() -> list[None]:
+    async def list_tools(self) -> list[None]:
         return []
+
+    async def call_tool(self, name: str, args: dict[str, Any], metadata: dict[str, Any] | None = None) -> Any:
+        return None
+
+    def as_toolset(self, max_retries: int = 1) -> BaseToolset:
+        return MCPToolset(cast(MCPServer, self), max_retries=max_retries)
 
 
 text_responses: dict[str, str | ToolCallPart] = {

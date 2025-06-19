@@ -27,7 +27,7 @@ class RunContext(Generic[AgentDepsT]):
     """The model used in this run."""
     usage: Usage
     """LLM usage associated with the run."""
-    prompt: str | Sequence[_messages.UserContent] | None
+    prompt: str | Sequence[_messages.UserContent] | None = None
     """The original user prompt passed to the run."""
     messages: list[_messages.ModelMessage] = field(default_factory=list)
     """Messages exchanged in the conversation so far."""

@@ -502,14 +502,6 @@ class ToolOutputSchema(OutputSchema[OutputDataT]):
         """Get the tools for this output schema."""
         return self._tools
 
-    def tool_names(self) -> list[str]:
-        """Return the names of the tools."""
-        return list(self.tools.keys())
-
-    def tool_defs(self) -> list[ToolDefinition]:
-        """Get tool definitions to register with the model."""
-        return [t.tool_def for t in self.tools.values()]
-
     def find_named_tool(
         self, parts: Iterable[_messages.ModelResponsePart], tool_name: str
     ) -> tuple[_messages.ToolCallPart, OutputTool[OutputDataT]] | None:
